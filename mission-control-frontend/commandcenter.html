@@ -1,0 +1,1826 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Drone Command Centre</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root{
+    --bg:#0f1724;
+    --panel:rgba(12,18,28,0.9);
+    --muted:#94a3b8;
+    --accent:#2355ab;
+    --glass: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.06);
+    --text:#e6eef6;
+    --shadow: 0 8px 30px rgba(2,6,23,0.6);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  :root.light{
+    --bg:#f3f4f6;
+    --panel:#ffffff;
+    --muted:#475569;
+    --accent:#0ea5a4;
+    --glass: rgba(2,6,23,0.03);
+    --border: rgba(2,6,23,0.06);
+    --text:#0f1724;
+    --shadow: 0 10px 30px rgba(2,6,23,0.08);
+  }
+
+  html,body {height:100%;margin:0;background:var(--bg);color:var(--text);overflow:hidden}
+  .app {height:100vh;display:flex;flex-direction:column}
+
+  /* Top bar */
+  .topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);box-shadow:var(--shadow);border-bottom:1px solid var(--border);z-index:20;position:relative}
+  .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:1px}
+  .brand .logo{height:300px;padding:0px 0px;border-radius:6px;/* background:linear-gradient(90deg,var(--accent),#031532); */color:rgb(165, 164, 196);font-weight:700}
+  .top-actions{display:flex;align-items:center;gap:10px}
+  .btn{background:var(--panel);border:1px solid var(--border);padding:8px 10px;border-radius:8px;color:var(--text);cursor:pointer;backdrop-filter: blur(6px);position:relative;z-index:20}
+  .btn.ghost{background:transparent}
+  .btn.primary{background:linear-gradient(90deg,var(--accent),#3b82f6);color:white;border:none}
+
+  /* layout */
+  .workspace{flex:1;display:flex;position:relative}
+
+  /* left / right sliding panels */
+  .panel{
+    position:absolute;top:64px;bottom:48px;width:500px;background:var(--panel);box-shadow:var(--shadow);border:1px solid var(--border);backdrop-filter: blur(6px);overflow:auto;
+    transition:transform 360ms cubic-bezier(.2,.9,.2,1), box-shadow 200ms;
+    border-radius:8px;
+    z-index:20;
+  }
+  .panel.left{left:12px;transform:translateX(-104%)} 
+  .panel.right{right:12px;transform:translateX(104%)} 
+  .panel.active{transform:translateX(0)}
+  .panel .hdr{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700}
+  .panel .body{padding:12px}
+  .panel .small{font-size:13px;color:var(--muted);margin-bottom:8px}
+
+  /* map area */
+  .map-area{flex:1;margin:12px;border-radius:10px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,0.02)}
+
+  /* Leaflet map full size and behind UI */
+  #map {position:absolute;inset:0;z-index:0;}
+
+  /* UI elements above map */
+  .drone-marker,.fpv,.right-tools{position:absolute;z-index:20;pointer-events:auto}
+
+  /* sample markers */
+  .drone-marker{width:24px;height:24px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;color:white;box-shadow:0 8px 20px rgba(0,0,0,0.5)}
+  .marker-1{left:28%;top:26%}
+  .marker-2{left:45%;top:18%}
+  .marker-3{left:60%;top:44%}
+  .marker-4{left:36%;top:62%}
+  .marker-5{left:73%;top:64%}
+
+  /* FPV window */
+  .fpv {
+    /* position: fixed; */
+    top: 16px;
+    right: 15px;
+    width: 450px;
+    height: 480px;   
+    max-height: 50vh;
+    background: rgba(15, 18, 25, 0.75);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 14px;
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 3000;
+  }
+
+  .fpv-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    background: rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    font-size: 13px;
+  }
+
+  .fpv-video {
+    flex: 1;
+    background: black;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #fpvVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .fpv-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 14px;
+
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+
+    z-index: 9999;
+  }
+
+  /* LEFT SIDE CONTROLS */
+  .controls-left {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ZOOM ROW MORE COMPACT */
+  .zoom-row .zoom-label {
+    color: #fff;
+    font-size: 13px;
+    opacity: 0.8;
+  }
+
+  /* RIGHT SIDE GIMBAL */
+  .gimbal-controls {
+    display: flex;
+    align-items: center;
+  }
+
+  .gimbal-pad {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .gimbal-middle {
+    display: flex;
+    gap: 4px;
+  }
+
+  /* Button styles */
+  .cbtn, .gbtn {
+    background: #1c1c1c;
+    color: white;
+    border: 1px solid #555;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    min-width: 50px;
+  }
+
+  .cbtn:hover, .gbtn:hover {
+    background: #333;
+  }
+
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .zoom-label {
+    font-size: 11px;
+    opacity: 0.6;
+  }
+
+  /* right side small controls vertical */
+  .right-tools{right:12px;top:220px;display:flex;flex-direction:column;gap:8px}
+  .tool{background:var(--panel);border:1px solid var(--border);padding:8px;border-radius:12px;backdrop-filter: blur(6px);cursor:pointer}
+
+  /* bottom bar */
+  .bottombar{height:48px;background:linear-gradient(180deg, rgba(0,0,0,0.06), transparent);display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-top:1px solid var(--border);z-index:20;position:relative}
+  .status-strip{display:flex;gap:12px;align-items:center}
+  .stat{background:var(--panel);padding:8px 10px;border-radius:8px;border:1px solid var(--border);min-width:140px;text-align:center}
+  /* Notification panel */
+  .notification-panel {
+    z-index: 30; /* above mission panel */
+    transition: transform 360ms cubic-bezier(.2,.9,.2,1), opacity 300ms;
+    opacity: 1;
+  }
+
+  .notification-panel.hidden {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+
+  .notification-panel.visible {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .notification-item {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-word;
+  }
+  /* Section styling */
+  .section {
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--accent);
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+  }
+
+  /* Form groups */
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 12px;
+    width: 90%;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 12px;
+    width: 90%;
+  }
+
+  .form-group.half {
+    flex: 1;
+    width: 90%;
+  }
+
+  /* Buttons in the form */
+  .form-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  /* Saved missions buttons */
+  .saved-missions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  /* Mission Control panel scroll */
+  #panel-left {
+    overflow: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+    position: absolute;
+  }
+
+  /* Chrome, Edge, Safari */
+  #panel-left::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  #panel-left::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  #panel-left::-webkit-scrollbar-thumb {
+    background-color: rgba(255,255,255,0.15);
+    border-radius: 4px;
+    transition: background-color 0.3s, opacity 0.3s;
+    opacity: 0;  /* hidden by default */
+  }
+
+  #panel-left:hover::-webkit-scrollbar-thumb,
+  #panel-left:active::-webkit-scrollbar-thumb {
+    opacity: 1; /* show on hover or active */
+  }
+
+  /* Optional hover effect */
+  #panel-left::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255,255,255,0.25);
+  }
+
+  /* Firefox */
+  #panel-left {
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 6px 8px;
+    background: transparent;          /* keep tabs transparent */
+    border: none;                     /* no full border */
+    border-bottom: 2px solid transparent; /* subtle underline */
+    font-size: 12px;
+    color: var(--muted);              /* muted text for inactive */
+    cursor: pointer;
+    text-align: center;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .tab.active {
+    color: var(--accent);             /* accent color text */
+    border-bottom-color: var(--accent); /* subtle underline */
+  }
+
+  .tab:hover {
+    color: var(--text);               /* slightly brighten text on hover */
+    border-bottom-color: rgba(255,255,255,0.15); /* subtle hover underline */
+  }
+  #info {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-family: sans-serif;
+    font-size: 14px;
+  }
+  .circle-number {
+    width: 20px;
+    height: 20px;
+    background: #00ffff;
+    color: #000;
+    border: 2px solid #00ffff;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 18px;
+    font-size: 12px;
+    font-weight: bold;
+  }
+  .floating-actions {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 10;
+  }
+
+  .icon-btn {
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .icon-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    transform: scale(1.05);
+  }
+
+  .icon-btn.warn {
+    background: #ff5252;
+    color: white;
+  }
+
+  .icon-btn i {
+    width: 22px;
+    height: 22px;
+    stroke-width: 2;
+  }
+
+  .context-menu {
+    position: fixed;
+    background: rgba(20, 25, 35, 0.95);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    font-size: 0.9rem;
+    z-index: 10000;
+    width: 160px;
+    backdrop-filter: blur(6px);
+  }
+
+  .context-menu .menu-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .context-menu .menu-item:hover {
+    background: rgba(255,255,255,0.1);
+  }
+  .wp-list {
+    list-style: none;
+    padding: 0;
+    margin-top: 10px;
+  }
+
+  .wp-item {
+    background: rgba(255,255,255,0.05);
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: grab;
+  }
+
+  .wp-item.dragging {
+    opacity: 0.4;
+  }
+
+  .wp-del {
+    background: #ff4d4d;
+    border: none;
+    color: white;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  /* Telemetry panel layout */
+  .telemetry-panel {
+    font-size: 13px;
+  }
+
+  .telemetry-section {
+    margin-bottom: 14px;
+  }
+
+  .telemetry-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+
+  .telemetry-item label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+
+  .telemetry-value,
+  .telemetry-badge {
+    font-size: 13px;
+  }
+
+  /* Badge-style fields like mode / status */
+  .telemetry-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(15, 118, 110, 0.18);
+    border: 1px solid rgba(45, 212, 191, 0.4);
+  }
+
+  .telemetry-badge.muted {
+    background: rgba(148, 163, 184, 0.1);
+    border-color: rgba(148, 163, 184, 0.3);
+  }
+
+  /* Mission progress bar */
+  .telemetry-progress {
+    position: relative;
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(15,23,42,0.7);
+    overflow: hidden;
+    margin-top: 4px;
+  }
+
+  .telemetry-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent), #22c55e);
+    transition: width 0.2s ease-out;
+  }
+
+  .telemetry-progress-label {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .status-pill { padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+  .status-pill.ok  { background:#16381c; color:#4caf50; }
+  .status-pill.bad { background:#3a1616; color:#f44336; }
+
+
+</style>
+</head>
+<body>
+
+  <div class="app" id="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"><img src="./arlogowithrvmt.png" height="100%"/></div>
+        <div style="line-height:1; padding-top: 8px;">
+          <div style="font-size:25px">COMMAND CENTER</div>
+          <div style="font-size:18px;color:var(--muted)">Mission Control</div>
+        </div>
+      </div>
+
+    <div class="top-actions">
+      <button class="btn ghost" id="toggleLeft">☰ Mission</button>
+      <button class="btn ghost" id="toggleRight">📡 Telemetry</button>
+      <button class="btn" id="toggleFPV">▶ FPV</button>
+      <button class="btn ghost" id="toggleNotification">🔔 </button>
+      <button class="btn" id="themeToggle">🌙</button>
+      <button class="btn primary" id="gotoUgv"  onclick="location.href='direction.html'">UGV</button>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <!-- Left panel -->
+    <!-- Notification Window / Feed -->
+    <div id="notificationWindow" class="panel notification-panel hidden" aria-hidden="true" style="top:50px;left:30px;width:300px;height:250px;">
+      <div class="hdr">
+        <div>Notifications</div>
+        <div><div class="btn" id="closeNotification">✕</div></div>
+      </div>
+      <div class="body" style="font-size:13px;overflow-y:auto;" id="notificationFeed">
+        <!-- Notifications will appear here dynamically -->
+      </div>
+    </div>
+
+    <div id="panel-left" class="panel left" aria-hidden="true">
+      <div class="hdr">
+        <div>Sky Watch — Mission Control</div>
+        <div style="display:flex;gap:8px">
+          <div class="small" id="left-status">Ready</div>
+          <div class="btn" id="closeLeft">✕</div>
+        </div>
+      </div>
+      <div class="body">
+        <!-- Section: Mission Details -->
+        <div class="tabs">
+          <button class="tab active" data-tab="path">Path</button>
+          <button class="tab" data-tab="orbit">Orbit</button>
+          <button class="tab" data-tab="tower">Tower</button>
+          <button class="tab" data-tab="mapping">Mapping</button>
+        </div>
+
+        <div class="tab-content" id="tabContent">
+          Click to add waypoints
+        </div>
+        <br>
+        <div class="section">
+          <!-- Floating Action Buttons -->
+          <div class="floating-actions">
+            <button class="icon-btn" id="saveMission" title="Save">
+              <i data-lucide="save"></i>
+            </button>
+            <button class="icon-btn" id="simulate" title="Simulate">
+              <i data-lucide="play-circle"></i>
+            </button>
+            <button class="icon-btn warn" id="dispatch" title="Dispatch">
+              <i data-lucide="send"></i>
+            </button>
+          </div>
+          <div class="section-title">Mission Details</div>
+          
+          <div class="form-group">
+            <label for="missionName">Mission Name</label>
+            <input id="missionName" value="Sky Watch" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group half">
+              <label for="lat">Latitude</label>
+              <input id="lat" value="1.30079102588" />
+            </div>
+            <div class="form-group half">
+              <label for="lon">Longitude</label>
+              <input id="lon" value="103.78979756" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="alt">Altitude (m): 
+              <span id="altValue">39</span>
+            </label>
+            <input type="range" id="alt" min="0" max="100" value="39" step="1" />
+          </div>
+
+          <!-- 🔹 NEW BLOCK -->
+          <div class="form-group">
+            <label for="droneSelect">Assigned Drone</label>
+            <select id="droneSelect">
+              <option value="">Loading drones...</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="missionStatus">Mission Status</label>
+            <select id="missionStatus">
+              <option value="draft" selected>Draft</option>
+              <option value="scheduled">Scheduled</option>
+            </select>
+            <br>
+            <div class="form-group" id="scheduleFields" style="display:none;">
+              <label>Schedule:</label>
+              <input type="date" id="scheduleDate">
+              <input type="time" id="scheduleTime">
+            </div>
+
+          </div>
+
+          <div class="form-actions">
+            <button class="btn primary" id="saveMissionbottom">Save</button>
+            <div class="loop-controls">
+              <button id="loopToggle" class="btn ghost">🔁 Loop: Off</button>
+              <label id="loopCountLabel" style="display:none;">
+                Count:
+                <input id="loopCount" type="number" min="1" value="1" style="width:60px;" />
+              </label>
+            </div>
+
+          </div>
+        </div>
+
+        <hr style="border:none;height:1px;margin:12px 0;background:var(--border)" />
+
+        <!-- Section: Saved Missions -->
+        <div class="section">
+          <div class="section-title">Saved Missions</div>
+          <button class="btn" id="refresh">Refresh</button>
+          <div class="saved-missions">
+            <button class="btn ghost" onclick="loadMission('Surveillance Route 3')">Surveillance Route 3 · 4 drones · Scheduled</button>
+            <button class="btn ghost" onclick="loadMission('Pipeline Inspection')">Pipeline Inspection · 1 drone · In progress</button>
+            <button class="btn ghost" onclick="loadMission('Mapping Area')">Mapping Area · 3 drones · Completed</button>
+          </div>
+        </div>
+        <!-- Waypoint List UI -->
+        <div class="section">
+          <div class="section-title">Waypoints</div>
+          <ul id="waypointList" class="wp-list"></ul>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Right panel -->
+    <div id="panel-right" class="panel right" aria-hidden="true">
+      <div class="hdr">
+        <div>Drone Details & Telemetry</div>
+        <div><div class="btn" id="closeRight">✕</div></div>
+      </div>
+
+      <div class="body telemetry-panel">
+
+        <!-- Active drone selection -->
+        <div class="form-group">
+          <label for="teleDroneSelect">Active Drone</label>
+          <select id="teleDroneSelect">
+            <!-- hardcoded list – can be synced with your existing drone list -->
+            <option value="">Loading drones...</option>
+          </select>
+        </div>
+
+        <!-- FLIGHT STATUS -->
+        <div class="telemetry-section">
+          <div class="section-title">Flight Status</div>
+          <div class="telemetry-grid">
+            <div class="telemetry-item">
+              <label>Mode</label>
+              <div id="tele_mode" class="telemetry-badge">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Status</label>
+              <div id="tele_status" class="telemetry-badge muted">Disconnected</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Waypoint</label>
+              <div id="tele_wp" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Mission Progress</label>
+              <div class="telemetry-progress">
+                <div id="tele_missionProgressBar" class="telemetry-progress-bar"></div>
+              </div>
+              <div id="tele_missionProgressLabel" class="telemetry-progress-label">0%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- POSITION -->
+        <div class="telemetry-section">
+          <div class="section-title">Position</div>
+          <div class="telemetry-grid">
+            <div class="telemetry-item">
+              <label>Latitude</label>
+              <div id="tele_lat" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Longitude</label>
+              <div id="tele_lng" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Altitude (AMSL)</label>
+              <div id="tele_alt_amsl" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Altitude (AGL)</label>
+              <div id="tele_alt_agl" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Ground Speed</label>
+              <div id="tele_speed" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Vertical Speed</label>
+              <div id="tele_vspeed" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Heading</label>
+              <div id="tele_heading" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Distance to WP</label>
+              <div id="tele_distWp" class="telemetry-value">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SYSTEM -->
+        <div class="telemetry-section">
+          <div class="section-title">System</div>
+          <div class="telemetry-grid">
+            <div class="telemetry-item">
+              <label>Battery</label>
+              <div id="tele_batt" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Voltage</label>
+              <div id="tele_battVolt" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>GPS</label>
+              <div id="tele_gps" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Satellites</label>
+              <div id="tele_sats" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Link Quality</label>
+              <div id="tele_link" class="telemetry-value">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CAMERA / GIMBAL -->
+        <div class="telemetry-section">
+          <div class="section-title">Camera & Gimbal</div>
+          <div class="telemetry-grid">
+            <div class="telemetry-item">
+              <label>Zoom</label>
+              <div id="tele_zoom" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Gimbal Pitch / Yaw</label>
+              <div id="tele_gimbal" class="telemetry-value">—</div>
+            </div>
+            <div class="telemetry-item">
+              <label>Recording</label>
+              <div id="tele_rec" class="telemetry-value">—</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Map area -->
+    <div class="map-area" id="mapArea">
+      <div id="map"></div>
+      <!-- markers -->
+      
+
+      <!-- FPV -->
+      <div class="fpv" id="fpv" style="display:none">
+
+        <div class="fpv-header">
+          <div class="title">H3D-11 • Matrice 300 RTK</div>
+          <div class="fpv-actions">
+            <button id="closeFPV" class="btn small">✕</button>
+          </div>
+        </div>
+
+        <div class="fpv-video">
+           <video id="fpvVideo" autoplay playsinline muted></video>
+          <!--<video style="background-color:black" id="fpvVideo" width="800" height="450" autoplay playsinline controls muted></video>-->
+        </div>
+
+        <!-- FIXED: ADD A WRAPPER WITH BACKGROUND & PADDING -->
+        <div class="fpv-controls">
+
+          <div class="controls-left">
+
+            <!-- TOP ROW: PHOTO / RECORD -->
+            <div class="control-row">
+              <button class="cbtn" id="takePhoto">📸 Photo</button>
+              <button class="cbtn" id="startRecording">⏺ Record</button>
+              <button class="cbtn" id="stopRecording" disabled>⬛ Stop</button>
+            </div>
+
+            <!-- SECOND ROW: ZOOM -->
+            <div class="control-row zoom-row">
+              <button class="cbtn" id="zoomOut">➖</button>
+              <span class="zoom-label">Zoom</span>
+              <button class="cbtn" id="zoomIn">➕</button>
+            </div>
+
+          </div>
+
+          <!-- RIGHT SIDE: GIMBAL -->
+          <div class="gimbal-controls">
+            <div class="gimbal-pad">
+              <button class="gbtn" id="gimbalUp">▲</button>
+
+              <div class="gimbal-middle">
+                <button class="gbtn" id="gimbalLeft">◀</button>
+                <button class="gbtn" id="gimbalCenter">⦿</button>
+                <button class="gbtn" id="gimbalRight">▶</button>
+              </div>
+
+              <button class="gbtn" id="gimbalDown">▼</button>
+            </div>
+          </div>
+
+        </div>
+
+
+
+      </div>
+
+
+      <!-- right tools -->
+      <div class="right-tools">
+        <div class="tool" id="openLeftSmall">☰</div>
+        <div class="tool" id="openRightSmall">📡</div>
+        <div class="tool" id="centerOnAll">◎</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottombar">
+    <div class="status-strip">
+      <div class="stat">Mission: <strong id="currentMission">Sky Watch</strong></div>
+      <div class="stat">ETA: <strong id="eta">08:20</strong></div>
+      <div class="stat">Distance: <strong id="distance">1.2 km</strong></div>
+      <div id="mavlinkStatus" class="status-pill">MAVLink: Unknown</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div style="font-size:13px;color:var(--muted)">User: Admin</div>
+    </div>
+  </div>
+</div>
+
+<!--<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>-->
+<!--<script type="text/javascript" src="http://gc.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=5_kmXRo0UtYPkMmvi2pueMJ6TwZtFe75E64hAzwNX3T7zLrRHvxN1HY6Y5-TWOn1wOXmCU82BwjNFhbXOfXXoZzIOwXMUFzny9SKZ2ckHOwGLIDBjuLnuE1JrU5lRPY9" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="http://gc.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cDovL3d3dy51bWVkaWFzZXJ2ZXIubmV0L3VtZWRpYXNlcnZlci9kZW1vaHRtbDVXZWJSVENwbGF5ZXIuaHRtbA"/><script src="http://www.umediaserver.net/umediaserver/webrtcadapter.js"></script>
+<script src="http://www.umediaserver.net/umediaserver/unrealwebrtcplayer.js"></script>-->
+<script src="./libs/leaflet.js"></script>
+<script src="./libs/lucide.min.js"></script>
+<script src="./libs/hls.js"></script>
+<script>
+
+  const MAV_STATE_LABELS = {
+    0: "UNINIT",
+    1: "BOOT",
+    2: "CALIBRATING",
+    3: "STANDBY",
+    4: "ACTIVE",
+    5: "CRITICAL",
+    6: "EMERGENCY",
+    7: "POWEROFF",
+    8: "FLIGHT TERMINATION"
+  };
+
+  const MAV_STATE_DESCRIPTIONS = {
+    0: "System not initialized",
+    1: "Booting up",
+    2: "Calibrating sensors",
+    3: "On ground, ready",
+    4: "Active / in flight",
+    5: "Non-normal, but still running",
+    6: "Emergency",
+    7: "Shutting down",
+    8: "Flight terminated"
+  };
+
+  const MAV_STATE_CLASS = {
+    0: "status-uninit",
+    1: "status-boot",
+    2: "status-calibrating",
+    3: "status-standby",
+    4: "status-active",
+    5: "status-critical",
+    6: "status-emergency",
+    7: "status-poweroff",
+    8: "status-flight-termination"
+  };
+
+  function formatSystemStatus(code) {
+    if (code === undefined || code === null) return "UNKNOWN";
+    return MAV_STATE_LABELS[code] || `STATE ${code}`;
+  }
+
+  function getSystemStatusDescription(code) {
+    if (code === undefined || code === null) return "";
+    return MAV_STATE_DESCRIPTIONS[code] || "";
+  }
+
+  function getSystemStatusClass(code) {
+    return MAV_STATE_CLASS[code] || "status-unknown";
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    // ===================== WebSocket to backend =====================
+    const ws = new WebSocket("ws://localhost:4000/ws");
+
+    // === Telemetry state ===
+    const teleDroneSelect = document.getElementById("teleDroneSelect");
+    const telemetryBySysid = {};
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value != null ? value : "—";
+    }
+
+    function formatNumber(val, decimals = 1) {
+      if (val == null || isNaN(val)) return "—";
+      return Number(val).toFixed(decimals);
+    }
+
+    function updateTelemetryPanelFor(sysid) {
+      const t = telemetryBySysid[sysid];
+      if (!t) {
+        // No telemetry yet – show "disconnected"
+        setText("tele_mode", "—");
+        setText("tele_status", "Disconnected");
+        document.getElementById("tele_status")?.classList.add("muted");
+        setText("tele_wp", "—");
+        setText("tele_lat", "—");
+        setText("tele_lng", "—");
+        setText("tele_alt_amsl", "—");
+        setText("tele_alt_agl", "—");
+        setText("tele_speed", "—");
+        setText("tele_vspeed", "—");
+        setText("tele_heading", "—");
+        setText("tele_distWp", "—");
+        setText("tele_batt", "—");
+        setText("tele_battVolt", "—");
+        setText("tele_gps", "—");
+        setText("tele_sats", "—");
+        setText("tele_link", "—");
+        setText("tele_zoom", "—");
+        setText("tele_gimbal", "—");
+        setText("tele_rec", "—");
+        const bar = document.getElementById("tele_missionProgressBar");
+        const lbl = document.getElementById("tele_missionProgressLabel");
+        if (bar) bar.style.width = "0%";
+        if (lbl) lbl.textContent = "0%";
+        return;
+      }
+
+      // Status & mode
+      setText("tele_mode", t.mode || "—");
+      const statusEl = document.getElementById("tele_status");
+      if (statusEl) {
+        statusEl.textContent = t.systemStatus || "OK";
+        statusEl.classList.remove("muted");
+      }
+
+      // Waypoints / mission
+      if (t.wpCurrent != null && t.wpTotal != null) {
+        setText("tele_wp", `${t.wpCurrent} / ${t.wpTotal}`);
+        const progress = t.wpTotal > 0 ? (t.wpCurrent / t.wpTotal) * 100 : 0;
+        const bar = document.getElementById("tele_missionProgressBar");
+        const lbl = document.getElementById("tele_missionProgressLabel");
+        if (bar) bar.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+        if (lbl) lbl.textContent = `${progress.toFixed(0)}%`;
+      } else {
+        setText("tele_wp", "—");
+      }
+
+      // Position
+      setText("tele_lat", t.lat != null ? formatNumber(t.lat, 5) : "—");
+      setText("tele_lng", t.lng != null ? formatNumber(t.lng, 5) : "—");
+      setText("tele_alt_amsl", t.altAmsl != null ? `${formatNumber(t.altAmsl, 1)} m` : "—");
+      setText("tele_alt_agl", t.altAgl != null ? `${formatNumber(t.altAgl, 1)} m` : "—");
+      setText("tele_speed", t.groundSpeed != null ? `${formatNumber(t.groundSpeed, 1)} m/s` : "—");
+      setText("tele_vspeed", t.verticalSpeed != null ? `${formatNumber(t.verticalSpeed, 1)} m/s` : "—");
+      setText("tele_heading", t.heading != null ? `${Math.round(t.heading)}°` : "—");
+      setText("tele_distWp", t.distanceToWp != null ? `${formatNumber(t.distanceToWp, 1)} m` : "—");
+
+      // System
+      setText("tele_batt", t.batteryRemaining != null ? `${Math.round(t.batteryRemaining)}%` : "—");
+      setText("tele_battVolt", t.batteryVoltage != null ? `${formatNumber(t.batteryVoltage, 1)} V` : "—");
+      setText("tele_gps", t.fixType || "—");
+      setText("tele_sats", t.sats != null ? `${t.sats}` : "—");
+      setText("tele_link", t.linkQuality != null ? `${Math.round(t.linkQuality)}%` : "—");
+
+      // Camera / gimbal
+      setText("tele_zoom", t.zoom != null ? `${formatNumber(t.zoom, 1)}×` : "—");
+      if (t.gimbalPitch != null || t.gimbalYaw != null) {
+        const pitch = t.gimbalPitch != null ? formatNumber(t.gimbalPitch, 0) : "—";
+        const yaw = t.gimbalYaw != null ? formatNumber(t.yaw, 0) : "—";
+        setText("tele_gimbal", `${pitch}° / ${yaw}°`);
+      } else {
+        setText("tele_gimbal", "—");
+      }
+
+      if (t.recording) {
+        const sec = t.recordingTime || 0;
+        const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+        const ss = String(sec % 60).padStart(2, "0");
+        setText("tele_rec", `🔴 ${mm}:${ss}`);
+      } else {
+        setText("tele_rec", "Idle");
+      }
+    }
+
+    ws.onopen = () => {
+      console.log("✅ WebSocket connected to backend");
+    };
+
+    ws.onclose = () => {
+      console.warn("⚠️ WebSocket disconnected");
+    };
+
+    ws.onerror = (err) => {
+      console.error("WS error:", err);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        console.log(msg);
+        if (msg.type === "telemetry") {
+          const sysid = msg.sysid ?? msg.droneId ?? 1;
+          telemetryBySysid[sysid] = msg;
+
+          const selectedSysid = parseInt(teleDroneSelect.value || "0", 10);
+          if (sysid === selectedSysid) {
+            updateTelemetryPanelFor(sysid);
+          }
+        }
+
+        if (msg.type === "mission_ack") {
+          addNotification(`Mission "${msg.missionName}" acknowledged by backend (${msg.status})`);
+        }
+
+        // You can handle other message types (info, etc.) here
+      } catch (e) {
+        console.error("Bad WS message:", event.data);
+      }
+    };
+
+    // When user changes telemetry drone dropdown, update panel
+    if (teleDroneSelect) {
+      teleDroneSelect.addEventListener("change", () => {
+        const sysid = parseInt(teleDroneSelect.value || "0", 10);
+        updateTelemetryPanelFor(sysid);
+      });
+    }
+
+    // Get selected drone sysid from dropdown (for commands)
+    function getSelectedSysId() {
+      const sel = document.getElementById("droneSelect");
+      if (!sel) return null;
+      const v = sel.value;
+      return v ? parseInt(v, 10) : null;
+    }
+
+    // Helper: send a command to backend
+    function sendCommand(cmd, extra = {}) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.warn("WS not open, cannot send", cmd);
+        return;
+      }
+      const sysid = getSelectedSysId(); // may be null if not chosen
+      const payload = {
+        type: "command",
+        cmd,
+        sysid,
+        ...extra,
+      };
+      ws.send(JSON.stringify(payload));
+      console.log("➡ WS command sent:", payload);
+    }
+
+    // ===================== Drone list =====================
+    async function loadDrones() {
+      const select = document.getElementById("droneSelect");
+      const teleselect = document.getElementById("teleDroneSelect");
+      if (!select || !teleselect) return;
+
+      select.innerHTML = "<option>Loading...</option>";
+
+      try {
+        const res = await fetch("http://localhost:4000/api/drones");
+        const data = await res.json();
+
+        select.innerHTML = "";
+        teleselect.innerHTML = "";
+
+        const drones = data.drones || [];
+
+        if (drones.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No drones detected";
+          select.appendChild(opt);
+          teleselect.appendChild(opt.cloneNode(true));
+          return;
+        }
+
+        drones.forEach(drone => {
+          const label = drone.name
+            ? `${drone.name} (SysID ${drone.sysid})`
+            : `ARKA ${drone.sysid}`;
+          const opt = document.createElement("option");
+          opt.value = drone.sysid;
+          opt.textContent = label;
+          select.appendChild(opt);
+        });
+
+        drones.forEach(drone => {
+          const label = drone.name
+            ? `${drone.name} (SysID ${drone.sysid})`
+            : `Drone ${drone.sysid}`;
+          const opt = document.createElement("option");
+          opt.value = drone.sysid;
+          opt.textContent = label;
+          teleselect.appendChild(opt);
+        });
+
+        // Select first by default and update panel
+        if (drones.length > 0) {
+          teleDroneSelect.value = drones[0].sysid;
+          updateTelemetryPanelFor(drones[0].sysid);
+        }
+
+      } catch (err) {
+        console.error("Failed to load drones:", err);
+        select.innerHTML = `<option>Error loading drones</option>`;
+      }
+    }
+
+    loadDrones();
+
+    lucide.createIcons();
+
+    // ===================== MAP & MISSION UI =====================
+    let sw = L.latLng(17.0429, 77.4817);
+    let ne = L.latLng(17.6429, 79.4017);
+    let bounds = L.latLngBounds(sw, ne);
+    const home = L.latLng(17.2429, 78.4817);
+    let map = L.map('map', {
+      center: L.latLng(17.2429, 78.4817),
+      zoomControl: false,
+      zoom: 17
+    });
+
+    L.tileLayer('https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=74dCqi4sn2ce18RJs4If', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    /*L.tileLayer('http://localhost:3650/api/tiles/satellite-2017-11-02_india_hyderabad/{z}/{x}/{y}.jpg', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);*/
+
+    L.marker(home).addTo(map)
+      .bindPopup('Arrobot')
+      .openPopup();
+
+    const waypoints = []; // plain {lat,lng} objects
+    const markers = [];
+    let routeLine = null;
+
+    // Add loop variables
+    let loopEnabled = false;
+    let loopCount = 1;
+
+    // Toggle loop mode
+    document.getElementById('loopToggle').addEventListener('click', () => {
+      loopEnabled = !loopEnabled;
+      const toggleBtn = document.getElementById('loopToggle');
+      const loopLabel = document.getElementById('loopCountLabel');
+
+      if (loopEnabled) {
+        toggleBtn.innerText = '🔁 Loop: On';
+        loopLabel.style.display = 'inline';
+      } else {
+        toggleBtn.innerText = '🔁 Loop: Off';
+        loopLabel.style.display = 'none';
+      }
+      updatePolyline();
+    });
+
+    // Handle loop count change
+    document.getElementById('loopCount').addEventListener('input', (e) => {
+      loopCount = Math.max(1, parseInt(e.target.value) || 1);
+      updatePolyline();
+    });
+
+    // Update route polyline
+    function updatePolyline() {
+      if (routeLine) map.removeLayer(routeLine);
+
+      if (waypoints.length > 0) {
+        const path = [home, ...waypoints.map(wp => L.latLng(wp.lat, wp.lng))];
+
+        if (loopEnabled && waypoints.length > 1) {
+          path.push(path[1]); // close loop
+        }
+
+        routeLine = L.polyline(path, {
+          color: loopEnabled ? '#ffa500' : '#00ffff',
+          weight: 2,
+          dashArray: loopEnabled ? '4,6' : null
+        }).addTo(map);
+      }
+    }
+
+    function createNumberIcon(number) {
+      return L.divIcon({
+        className: 'circle-number',
+        html: number.toString(),
+        iconSize: [20, 20]
+      });
+    }
+
+    map.on('click', (e) => {
+      const latlng = e.latlng;
+      const waypoint = { lat: latlng.lat, lng: latlng.lng };
+      waypoints.push(waypoint);
+
+      const marker = L.marker(latlng, {
+        icon: createNumberIcon(waypoints.length),
+        draggable: true
+      }).addTo(map);
+
+      markers.push(marker);
+      marker.waypointRef = waypoint;
+
+      if (waypoints.length === 1) {
+        document.getElementById("lat").value = waypoint.lat;
+        document.getElementById("lon").value = waypoint.lng;
+      }
+
+      marker.on('drag', (ev) => {
+        const pos = ev.target.getLatLng();
+        marker.waypointRef.lat = pos.lat;
+        marker.waypointRef.lng = pos.lng;
+        updatePolyline();
+      });
+
+      marker.on('contextmenu', (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        showWaypointMenu(ev, marker);
+      });
+
+      updatePolyline();
+      document.getElementById('tabContent').innerText = `Waypoints: ${waypoints.length}`;
+    });
+
+    function showWaypointMenu(e, marker) {
+      const menu = document.createElement('div');
+      menu.className = 'context-menu';
+      menu.style.position = 'absolute';
+      menu.style.left = event.clientX + 'px';
+      menu.style.top = event.clientY + 'px';
+      menu.style.zIndex = 9999;
+      menu.innerHTML = `
+        <div class="menu-item" id="home">🏠 Home</div>
+        <div class="menu-item" id="del">🗑️ Delete</div>
+        <div class="menu-item" id="edit">✏️ Edit</div>
+        <div class="menu-item" id="focus">🎯 Focus</div>
+      `;
+      document.body.appendChild(menu);
+
+      document.addEventListener('click', () => menu.remove(), { once: true });
+
+      document.getElementById('del').onclick = () => {
+        const idx = markers.indexOf(marker);
+        if (idx !== -1) {
+          map.removeLayer(markers[idx]);
+          markers.splice(idx, 1);
+          waypoints.splice(idx, 1);
+          updatePolyline();
+        }
+        menu.remove();
+      };
+
+      document.getElementById('focus').onclick = () => {
+        map.panTo(marker.getLatLng());
+        menu.remove();
+      };
+    }
+
+    let orbitLayer = null;
+    let cornerMarkers = [];
+
+    function metersToLat(m) { return m / 111111; }
+    function metersToLng(m, lat) { return m / (111111 * Math.cos(lat * Math.PI / 180)); }
+
+    function drawOrbit(shape, options = {}) {
+      if (orbitLayer) map.removeLayer(orbitLayer);
+      cornerMarkers.forEach(m => map.removeLayer(m));
+      cornerMarkers = [];
+
+      if (shape === 'circle') {
+        orbitLayer = L.circle(home, {
+          radius: options.radius,
+          color: '#ff9900',
+          fillColor: '#ffaa00',
+          fillOpacity: 0.2,
+          weight: 2
+        }).addTo(map);
+        map.fitBounds(orbitLayer.getBounds());
+      } else if (shape === 'square' || shape === 'rectangle') {
+        const w = metersToLng(options.width, home.lat);
+        const h = metersToLat(options.height);
+        const corners = [
+          [home.lat + h/2, home.lng - w/2],
+          [home.lat + h/2, home.lng + w/2],
+          [home.lat - h/2, home.lng + w/2],
+          [home.lat - h/2, home.lng - w/2]
+        ];
+        orbitLayer = L.polygon(corners, {
+          color:'#ff9900',
+          fillColor:'#ffaa00',
+          fillOpacity:0.2,
+          weight:2
+        }).addTo(map);
+        map.fitBounds(orbitLayer.getBounds());
+      } else if (shape === 'custom') {
+        orbitLayer = L.polygon(options.corners, {
+          color:'#ff9900',
+          fillColor:'#ffaa00',
+          fillOpacity:0.2,
+          weight:2
+        }).addTo(map);
+        options.corners.forEach((corner, i) => {
+          const m = L.marker(corner, { draggable:true }).addTo(map);
+          m.on('drag', (e)=>{
+            const latlngs = orbitLayer.getLatLngs()[0];
+            latlngs[i] = e.target.getLatLng();
+            orbitLayer.setLatLngs([latlngs]);
+          });
+          cornerMarkers.push(m);
+        });
+        map.fitBounds(orbitLayer.getBounds());
+      }
+    }
+
+    // UI logic
+    const panelLeft = document.getElementById('panel-left');
+    const panelRight = document.getElementById('panel-right');
+    const toggleLeftBtn = document.getElementById('toggleLeft');
+    const toggleRightBtn = document.getElementById('toggleRight');
+    const closeLeft = document.getElementById('closeLeft');
+    const closeRight = document.getElementById('closeRight');
+    const fpv = document.getElementById('fpv');
+    const toggleFPV = document.getElementById('toggleFPV');
+    const themeToggle = document.getElementById('themeToggle');
+
+    toggleLeftBtn.addEventListener('click', ()=>{ panelLeft.classList.toggle('active'); });
+    closeLeft.addEventListener('click', ()=>{ panelLeft.classList.remove('active'); });
+    document.getElementById('openLeftSmall').addEventListener('click', ()=>{ panelLeft.classList.toggle('active'); });
+
+    toggleRightBtn.addEventListener('click', ()=>{ panelRight.classList.toggle('active'); });
+    closeRight.addEventListener('click', ()=>{ panelRight.classList.remove('active'); });
+    document.getElementById('openRightSmall').addEventListener('click', ()=>{ panelRight.classList.toggle('active'); });
+
+    toggleFPV.addEventListener('click', ()=>{ fpv.style.display = fpv.style.display==='none' ? 'flex':'none'; startFPV();});
+    themeToggle.addEventListener('click', ()=>{
+      document.documentElement.classList.toggle('light');
+      themeToggle.textContent = document.documentElement.classList.contains('light') ? '☀️':'🌙';
+    });
+
+    //document.getElementById('gotoUgv').addEventListener('click', ()=>alert('Dispatch clicked'));
+    document.getElementById('saveMissionbottom').addEventListener('click', ()=>saveMission('draft'));
+    document.getElementById('simulate').addEventListener('click', ()=>alert('Simulate clicked'));
+
+    const notificationFeed = document.getElementById('notificationFeed');
+    const notificationWindow = document.getElementById('notificationWindow');
+    const closeNotification = document.getElementById('closeNotification');
+    const toggleNotificationBtn = document.getElementById('toggleNotification');
+
+    closeNotification.addEventListener('click', () => {
+      notificationWindow.classList.remove('visible');
+      notificationWindow.classList.add('hidden');
+    });
+
+    toggleNotificationBtn.addEventListener('click', () => {
+      notificationWindow.classList.toggle('visible');
+      notificationWindow.classList.toggle('hidden');
+    });
+
+    function addNotification(message) {
+      const div = document.createElement('div');
+      div.classList.add('notification-item');
+      div.textContent = message;
+      notificationFeed.prepend(div);
+      notificationFeed.scrollTop = 0;
+      setTimeout(() => {
+        div.remove();
+      }, 10000);
+    }
+
+    setInterval(() => {
+      const messages = [
+        'Drone H3D-11 reached WP4',
+        'New mission "Pipeline Inspection" added',
+        'Drone H3D-07 battery low',
+        'Mission "Sky Watch" completed waypoint 2'
+      ];
+      const msg = messages[Math.floor(Math.random()*messages.length)];
+      addNotification(msg);
+    }, 5000);
+
+    const tabs = document.querySelectorAll('.tab');
+    const tabContent = document.getElementById('tabContent');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        clearOrbit();
+        clearWaypoints();
+
+        switch(tab.dataset.tab) {
+          case 'path':
+            tabContent.innerHTML = 'Click to add waypoints';
+            break;
+          case 'orbit':
+            showOrbitTab();
+            break;
+          case 'tower':
+            tabContent.textContent = 'Tower content here...';
+            break;
+          case 'mapping':
+            tabContent.textContent = 'Mapping content here...';
+            break;
+        }
+      });
+    });
+
+    const altSlider = document.getElementById("alt");
+    const altValue = document.getElementById("altValue");
+    altValue.textContent = altSlider.value;
+    altSlider.addEventListener("input", () => {
+      altValue.textContent = altSlider.value;
+    });
+
+    function showOrbitTab() {
+      tabContent.innerHTML = `
+        <label for="shapeSelect">Shape:</label>
+        <select id="shapeSelect">
+          <option value="circle" selected>Circle</option>
+          <option value="square">Square</option>
+          <option value="rectangle">Rectangle</option>
+          <option value="custom">Custom Polygon</option>
+        </select>
+        <br><br>
+
+        <div id="circleInputs">
+          <label>Radius (meters): </label>
+          <input type="number" id="radiusInput" value="100" min="50" step="10">
+        </div>
+
+        <div id="rectInputs" style="display:none;">
+          <label>Width (meters): </label>
+          <input type="number" id="widthInput" value="200" min="50" step="10"><br>
+          <label>Height (meters): </label>
+          <input type="number" id="heightInput" value="100" min="50" step="10">
+        </div>
+      `;
+
+      const shapeSelect = document.getElementById('shapeSelect');
+      const radiusInput = document.getElementById('radiusInput');
+      const widthInput = document.getElementById('widthInput');
+      const heightInput = document.getElementById('heightInput');
+
+      function updateOrbit() {
+        const shape = shapeSelect.value;
+        const options = {};
+
+        if (shape === 'circle') {
+          options.radius = parseFloat(radiusInput.value);
+        } else if (shape === 'square') {
+          options.width = parseFloat(widthInput.value);
+          options.height = parseFloat(widthInput.value);
+        } else if (shape === 'rectangle') {
+          options.width = parseFloat(widthInput.value);
+          options.height = parseFloat(heightInput.value);
+        } else if (shape === 'custom') {
+          const defaultCorners = [
+            [home.lat + 0.001, home.lng - 0.001],
+            [home.lat + 0.001, home.lng + 0.001],
+            [home.lat - 0.001, home.lng + 0.001],
+            [home.lat - 0.001, home.lng - 0.001]
+          ];
+          options.corners = defaultCorners;
+        }
+
+        options.loopEnabled = loopEnabled;
+        options.loopCount = loopCount;
+
+        drawOrbit(shape, options);
+      }
+
+      shapeSelect.onchange = () => {
+        document.getElementById('circleInputs').style.display = shapeSelect.value === 'circle' ? 'block' : 'none';
+        document.getElementById('rectInputs').style.display =
+          (shapeSelect.value === 'square' || shapeSelect.value === 'rectangle') ? 'block' : 'none';
+        updateOrbit();
+      };
+
+      radiusInput.oninput = updateOrbit;
+      widthInput.addEventListener('input', updateOrbit);
+      heightInput.addEventListener('input', updateOrbit);
+
+      updateOrbit();
+    }
+
+    function clearOrbit() {
+      if (orbitLayer) {
+        map.removeLayer(orbitLayer);
+        orbitLayer = null;
+      }
+      cornerMarkers.forEach(m => map.removeLayer(m));
+      cornerMarkers = [];
+    }
+
+    function clearWaypoints() {
+      markers.forEach(m => map.removeLayer(m));
+      waypoints.length = 0;
+      markers.length = 0;
+      if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+      }
+    }
+
+    document.getElementById('saveMission').addEventListener('click', () => saveMission('draft'));
+    document.getElementById('dispatch').addEventListener('click', () => saveMission('dispatched'));
+
+    async function saveMission(statusOverride) {
+      const missionName = document.getElementById('missionName')?.value || "Untitled Mission";
+      const missionStatus = statusOverride || document.getElementById('missionStatus')?.value || 'draft';
+      const lat = parseFloat(document.getElementById('lat').value);
+      const lng = parseFloat(document.getElementById('lon').value);
+      const alt = parseFloat(document.getElementById('alt').value);
+      const droneSysId = document.getElementById('droneSelect')?.value || null;
+
+      let scheduledAt = null;
+      if (missionStatus === "scheduled") {
+        const date = document.getElementById("scheduleDate").value;
+        const time = document.getElementById("scheduleTime").value;
+        if (date && time) {
+          scheduledAt = new Date(`${date}T${time}`);
+        }
+      }
+
+      const missionData = {
+        missionName,
+        shape: document.getElementById('shapeSelect')?.value || null,
+        orbit: {
+          radius: parseFloat(document.getElementById('radiusInput')?.value || 0),
+          width: parseFloat(document.getElementById('widthInput')?.value || 0),
+          height: parseFloat(document.getElementById('heightInput')?.value || 0),
+          corners: window.currentOrbitCorners || []
+        },
+        waypoints,
+        loopEnabled,
+        loopCount,
+        location: { lat, lng, alt },
+        status: missionStatus,
+        scheduledAt,
+        droneSysId
+      };
+
+      try {
+        if (missionStatus === "dispatched") {
+          await fetch('http://localhost:4000/api/dispatch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(missionData)
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        alert('⚠️ Error saving mission');
+      }
+    }
+
+    const missionStatusInput = document.getElementById("missionStatus");
+    const scheduleFields = document.getElementById("scheduleFields");
+
+    missionStatusInput.addEventListener("change", () => {
+      if (missionStatusInput.value === "scheduled") {
+        scheduleFields.style.display = "block";
+      } else {
+        scheduleFields.style.display = "none";
+      }
+    });
+
+    async function startFPV() {
+      const video = document.getElementById("fpvVideo");
+
+      const src = `${window.location.origin}/fpv/stream.m3u8`;
+
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(src);
+        hls.attachMedia(video);
+      } else {
+        // Safari / iOS
+        video.src = src;
+      }
+
+      await video.play();
+      document.getElementById("fpv").style.display = "flex";
+    }
+
+    document.getElementById("closeFPV").onclick = () => {
+      const video = document.getElementById("fpvVideo");
+      video.pause();
+      video.src = "";
+      document.getElementById("fpv").style.display = "none";
+    };
+
+    // ============= Camera Controls via WebSocket =============
+    document.getElementById("takePhoto").onclick = () => {
+      sendCommand("TAKE_PHOTO");
+    };
+
+    document.getElementById("zoomIn").onclick = () => {
+      sendCommand("ZOOM_IN");
+    };
+
+    document.getElementById("zoomOut").onclick = () => {
+      sendCommand("ZOOM_OUT");
+    };
+
+    document.getElementById("startRecording").onclick = () => {
+      sendCommand("REC_START");
+    };
+
+    document.getElementById("stopRecording").onclick = () => {
+      sendCommand("REC_STOP");
+    };
+
+    // ============= Gimbal Controls via WebSocket =============
+    document.getElementById("gimbalUp").onclick = () => {
+      sendCommand("GIMBAL_UP");
+    };
+
+    document.getElementById("gimbalDown").onclick = () => {
+      sendCommand("GIMBAL_DOWN");
+    };
+
+    document.getElementById("gimbalLeft").onclick = () => {
+      sendCommand("GIMBAL_LEFT");
+    };
+
+    document.getElementById("gimbalRight").onclick = () => {
+      sendCommand("GIMBAL_RIGHT");
+    };
+
+    document.getElementById("gimbalCenter").onclick = () => {
+      sendCommand("GIMBAL_CENTER");
+    };
+
+    const wpList = document.getElementById("waypointList");
+
+    function refreshWaypointList() {
+      wpList.innerHTML = "";
+      waypoints.forEach((wp, i) => {
+        const li = document.createElement("li");
+        li.className = "wp-item";
+        li.draggable = true;
+        li.dataset.index = i;
+
+        li.innerHTML = `
+          WP ${i + 1} <small>${wp.lat.toFixed(5)}, ${wp.lng.toFixed(5)}</small>
+          <button class="wp-del">✖</button>
+        `;
+
+        li.querySelector(".wp-del").onclick = () => {
+          map.removeLayer(markers[i]);
+          markers.splice(i, 1);
+          waypoints.splice(i, 1);
+          updatePolyline();
+          refreshWaypointList();
+        };
+
+        li.addEventListener("dragstart", () => {
+          li.classList.add("dragging");
+        });
+
+        li.addEventListener("dragend", () => {
+          li.classList.remove("dragging");
+          const items = [...wpList.querySelectorAll(".wp-item")];
+          const newOrder = items.map(el => waypoints[el.dataset.index]);
+
+          waypoints.length = 0;
+          markers.length = 0;
+          map.eachLayer(layer => {
+            if (layer instanceof L.Marker && layer.waypointRef) map.removeLayer(layer);
+          });
+
+          newOrder.forEach(wp => {
+            const marker = L.marker([wp.lat, wp.lng], {
+              draggable: true,
+              icon: L.divIcon({
+                className: "circle-number",
+                html: (waypoints.length + 1).toString(),
+                iconSize: [20,20]
+              })
+            }).addTo(map);
+
+            marker.waypointRef = wp;
+            markers.push(marker);
+
+            marker.on("dragend", () => {
+              const p = marker.getLatLng();
+              wp.lat = p.lat;
+              wp.lng = p.lng;
+              updatePolyline();
+              refreshWaypointList();
+            });
+
+            waypoints.push(wp);
+          });
+
+          updatePolyline();
+          refreshWaypointList();
+        });
+
+        wpList.appendChild(li);
+      });
+    }
+    const mavlinkStatusEl = document.getElementById("mavlinkStatus"); // e.g. a small dot/label
+
+    async function pollMavlinkStatus() {
+      try {
+        const res = await fetch("http://localhost:4000/api/mavlink-status");
+        const data = await res.json();
+        console.log(data.connected);
+        if (data.connected) {
+          mavlinkStatusEl.textContent = "MAVLink: Connected";
+          mavlinkStatusEl.classList.add("ok");
+          mavlinkStatusEl.classList.remove("bad");
+        } else {
+          mavlinkStatusEl.textContent = "MAVLink: Disconnected";
+          mavlinkStatusEl.classList.add("bad");
+          mavlinkStatusEl.classList.remove("ok");
+        }
+      } catch (e) {
+        console.error("mavlink status failed", e);
+        mavlinkStatusEl.textContent = "MAVLink: Error";
+      }
+    }
+
+    // poll every 2 seconds
+    setInterval(pollMavlinkStatus, 2000);
+    pollMavlinkStatus();
+
+  });
+</script>
+
+</body>
+</html>

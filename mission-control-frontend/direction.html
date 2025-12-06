@@ -1,0 +1,1115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Drone Command Centre</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root{
+      --bg:#0f1724;
+      --panel:rgba(12,18,28,0.9);
+      --muted:#94a3b8;
+      --accent:#2355ab;
+      --glass: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.06);
+      --text:#e6eef6;
+      --shadow: 0 8px 30px rgba(2,6,23,0.6);
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    :root.light{
+      --bg:#f3f4f6;
+      --panel:#ffffff;
+      --muted:#475569;
+      --accent:#0ea5a4;
+      --glass: rgba(2,6,23,0.03);
+      --border: rgba(2,6,23,0.06);
+      --text:#0f1724;
+      --shadow: 0 10px 30px rgba(2,6,23,0.08);
+    }
+
+    html,body {height:100%;margin:0;background:var(--bg);color:var(--text);overflow:hidden}
+    .app {height:100vh;display:flex;flex-direction:column}
+
+    button {
+      cursor: pointer;
+    }
+    .topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);box-shadow:var(--shadow);border-bottom:1px solid var(--border);z-index:20;position:relative}
+      .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:1px}
+      .brand .logo{height:300px;padding:0px 0px;border-radius:6px;/* background:linear-gradient(90deg,var(--accent),#031532); */color:rgb(165, 164, 196);font-weight:700}
+      .top-actions{display:flex;align-items:center;gap:10px}
+      .btn{background:var(--panel);border:1px solid var(--border);padding:8px 10px;border-radius:8px;color:var(--text);cursor:pointer;backdrop-filter: blur(6px);position:relative;z-index:20}
+      .btn.ghost{background:transparent}
+      .btn.primary{background:linear-gradient(90deg,var(--accent),#3b82f6);color:white;border:none}
+
+      /* layout */
+      .workspace{flex:1;display:flex;position:relative}
+      .btn {
+        background-color: var(--primary);
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 6px;
+        border: none;
+        font: inherit;
+      }
+
+    .btn:hover {
+      background-color: var(--primary-dark);
+    }
+
+    .btn:active {
+      background-color: var(--primary-darker);
+    }
+
+    .btn-green {
+      background-color: var(--green);
+    }
+    .btn-green:hover {
+      background-color: var(--green-dark);
+    }
+
+    .btn-red {
+      background-color: var(--red);
+    }
+    .btn-red:hover {
+      background-color: var(--red-dark);
+    }
+
+    .btn-toggle-on {
+      background-color: var(--green);
+      color: #fff;
+      font-weight: bold;
+    }
+
+    .btn-toggle-off {
+      background-color: var(--red);
+      color: #fff;
+      font-weight: bold;
+    }
+
+    input[type="text"] {
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #fff;
+      font: inherit;
+      width: 100%;
+    }
+
+    #app {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #ccc;
+      background: #ecf0f1;
+    }
+
+    .tab-button {
+      padding: 8px 12px;
+      min-width: 120px;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      border-top-left-radius: 6px;
+      border-top-right-radius: 6px;
+      background: #ecf0f1;
+      font-weight: 500;
+    }
+
+    .tab-button.active {
+      background: #fff;
+    }
+
+    .tab-content {
+      flex: 1;
+      padding: 8px;
+      display: none;
+    }
+
+    .tab-content.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Generic layouts */
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Map containers */
+    .map-container {
+      position: relative;
+      flex: 1;
+      border: 1px solid #ccc;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .map-inner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform-origin: center center;
+      /* transform will be set by JS: translate/scale */
+      user-select: none;
+      cursor: grab;
+    }
+
+    .map-inner.dragging {
+      cursor: grabbing;
+    }
+
+    .map-inner img {
+      display: block;
+      max-width: none; /* important for zoom */
+    }
+
+    .odom-label {
+      padding: 5px;
+      font-weight: bold;
+      color: #666;
+      text-align: center;
+    }
+
+    /* Joystick overlay (Manual tab) */
+    .joystick-overlay {
+      position: absolute;
+      width: 150px;
+      height: 200px;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      pointer-events: none; /* parent gets clicks only where needed */
+    }
+
+    .joystick-overlay > * {
+      pointer-events: auto;
+    }
+
+    .joystick-toggle {
+      align-self: flex-end;
+      margin-bottom: 8px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: none;
+      font-size: 12px;
+    }
+
+    .joystick {
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #dcdcdc 0%, #b4b4b4 100%);
+      position: relative;
+      touch-action: none;
+    }
+
+    .joystick-stick {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #3498db;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    /* Stations tab left/right */
+    .stations-layout {
+      flex: 1;
+      display: flex;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .stations-left,
+    .stations-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    /* D-Pad overlay */
+    .station-joystick-overlay {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .station-joystick-overlay > * {
+      pointer-events: auto;
+    }
+
+    .pose-btn {
+      padding: 6px;
+      font-weight: bold;
+      font-size: 15px;
+      border-radius: 6px;
+      border: none;
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .pose-btn.pose-on {
+      background: var(--green);
+    }
+
+    .dpad-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 50px);
+      grid-template-rows: repeat(3, 50px);
+      gap: 5px;
+    }
+
+    .dpad-btn {
+      width: 50px;
+      height: 50px;
+      border-radius: 6px;
+      border: none;
+      font-size: 18px;
+      font-weight: bold;
+      background-color: var(--primary);
+      color: #fff;
+    }
+
+    .dpad-btn:disabled {
+      background: #bdc3c7;
+      color: #ecf0f1;
+    }
+
+    .dpad-stop {
+      background: var(--red);
+    }
+
+    .station-joystick-toggle {
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: none;
+      font-size: 12px;
+    }
+
+    /* Right panel header / list */
+    .right-header {
+      text-align: center;
+      font-weight: bold;
+      font-size: 16px;
+      margin-top: 8px;
+    }
+
+    .separator {
+      height: 1px;
+      background: #ccc;
+      margin: 4px 0 8px;
+    }
+
+    .stations-subtext {
+      font-size: 12px;
+      color: #7f8c8d;
+    }
+
+    .stations-grid-wrapper {
+      flex: 1;
+      overflow: auto;
+      background: #ecf0f1;
+      border-radius: 6px;
+      padding: 10px;
+      border: 1px solid #ccc;
+    }
+
+    .stations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 20px;
+    }
+
+    .station-card {
+      background: transparent;
+      border: 2px solid #95a5a6;
+      border-radius: 6px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .station-card.selected {
+      background: #bae0ca;
+    }
+
+    .station-name {
+      font: bold 16px Georgia, "Times New Roman", serif;
+      text-align: center;
+      margin-bottom: 6px;
+    }
+
+    .station-card-buttons {
+      display: flex;
+      gap: 6px;
+    }
+
+    .station-card-buttons button {
+      min-width: 60px;
+      border-radius: 6px;
+      border: none;
+      padding: 4px;
+      color: #fff;
+      font-size: 13px;
+    }
+
+    .station-card-go {
+      background: green;
+    }
+
+    .station-card-delete {
+      background: red;
+    }
+
+    /* Splash */
+    #splash {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+
+    .splash-content {
+      width: 400px;
+      height: 350px;
+      background: #111;
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      color: #fff;
+    }
+
+    .splash-image {
+      flex: 0 0 300px;
+      width: 100%;
+      border-radius: 8px;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      margin-bottom: 8px;
+    }
+
+    .splash-label {
+      margin-bottom: 6px;
+      font-size: 16px;
+    }
+
+    .splash-progress {
+      width: 100%;
+      height: 10px;
+      background: #333;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .splash-progress-bar {
+      height: 100%;
+      width: 0;
+      background: var(--primary);
+      transition: width 0.2s linear;
+    }
+  </style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo"><img src="./arlogowithrvmt.png" height="100%"/></div>
+      <div style="line-height:1; padding-top: 8px;">
+        <div style="font-size:25px">AMR COMMAND CENTER</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn primary" id="gotoUgv"  onclick="location.href='commandcenter.html'">UAV</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <!--<div class="tabs">
+    <button class="tab-button active" data-tab="manual-tab">Manual Control</button>
+    <button class="tab-button active" data-tab="stations-tab">Stations</button>
+  </div>-->
+
+  <!-- Manual Control Tab -->
+  <!--<div class="tab-content active" id="manual-tab">
+    <div class="map-container" id="manualMapContainer">
+      <div class="map-inner" id="manualMapInner">
+        &lt;!&ndash; Replace src with your map image or dynamic canvas &ndash;&gt;
+        <img src="placeholder_map.png" id="manualMapImg" alt="Map">
+      </div>
+
+      &lt;!&ndash; Joystick Overlay &ndash;&gt;
+      <div class="joystick-overlay" id="joystickOverlay">
+        <button class="joystick-toggle btn-toggle-off" id="joystickToggleBtn">OFF</button>
+        <div class="joystick" id="joystick">
+          <div class="joystick-stick" id="joystickStick"></div>
+        </div>
+      </div>
+    </div>
+    <div class="odom-label" id="manualOdom">Waiting for odometry...</div>
+  </div>-->
+  <!-- Stations Tab -->
+  <div class="tab-content active" id="stations-tab">
+    <div class="stations-layout">
+      <!-- LEFT: Map & odom -->
+      <div class="stations-left">
+        <div class="map-container" id="stationMapContainer">
+          <div class="map-inner" id="stationMapInner">
+            <img src="placeholder_map.png" id="stationMapImg" alt="Map">
+          </div>
+
+          <div class="station-joystick-overlay" id="stationJoystickOverlay">
+            <button class="pose-btn" id="poseBtn">2D Pose: OFF</button>
+            <button class="station-joystick-toggle btn-toggle-off" id="stationJoystickToggleBtn">OFF</button>
+
+            <div class="dpad-grid">
+              <div></div>
+              <button class="dpad-btn" id="dpadUp">↑</button>
+              <div></div>
+              <button class="dpad-btn" id="dpadLeft">←</button>
+              <button class="dpad-btn dpad-stop" id="dpadStop">■</button>
+              <button class="dpad-btn" id="dpadRight">→</button>
+              <div></div>
+              <button class="dpad-btn" id="dpadDown">↓</button>
+              <div></div>
+            </div>
+          </div>
+        </div>
+        <div class="odom-label" id="stationOdom">Waiting for odometry...</div>
+      </div>
+
+      <!-- RIGHT: Controls -->
+      <div class="stations-right">
+        <div class="right-header">Navigation Controls</div>
+        <div class="separator"></div>
+
+        <div class="row" style="margin-bottom:10px;">
+          <div style="flex:3;">
+            <input type="text" id="stationNameInput" placeholder="Enter station name">
+          </div>
+          <div style="flex:1;">
+            <button class="btn btn-green" id="stationSaveBtn">Save</button>
+          </div>
+        </div>
+
+        <div style="font-weight:bold;font-size:15px;margin-top:5px;text-decoration:underline;">Stations:</div>
+        <div class="stations-subtext">(Click on station name & click on GO to start navigation)</div>
+
+        <div style="display:flex;align-items:center;justify-content:flex-end;margin:6px 0;">
+          <button class="btn btn-red" id="cancelGoalBtn" style="font-weight:bold;font-size:15px;padding:6px 10px;">Cancel</button>
+        </div>
+
+        <div class="stations-grid-wrapper">
+          <div class="stations-grid" id="stationsGrid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ------------------------ Basic Tab Logic ------------------------ */
+const tabButtons = document.querySelectorAll('.tab-button');
+const tabContents = document.querySelectorAll('.tab-content');
+
+tabButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    tabButtons.forEach(b => b.classList.remove('active'));
+    tabContents.forEach(c => c.classList.remove('active'));
+
+    btn.classList.add('active');
+    document.getElementById(target).classList.add('active');
+  });
+});
+
+/* ------------------------ Splash Screen -------------------------- */
+(function initSplash() {
+  const splash = document.getElementById('splash');
+  const bar = document.getElementById('splashProgressBar');
+  const label = document.getElementById('splashLabel');
+  const app = document.getElementById('app');
+
+  let val = 0;
+  const durationMs = 3000;
+  const intervalMs = 300;
+  const step = 100 / (durationMs / intervalMs);
+
+  const timer = setInterval(() => {
+    val = Math.min(100, val + step);
+    bar.style.width = val + '%';
+    label.textContent = `Loading... ${Math.round(val)}%`;
+    if (val >= 100) {
+      clearInterval(timer);
+      splash.style.display = 'none';
+      app.style.display = 'flex';
+    }
+  }, intervalMs);
+})();
+
+/* --------------------- Map Zoom & Pan (Simple) ------------------- */
+function makeZoomableMap(containerId, innerId) {
+  const container = document.getElementById(containerId);
+  const inner = document.getElementById(innerId);
+  let scale = 1;
+  let offsetX = 0;
+  let offsetY = 0;
+  let isDragging = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  function updateTransform() {
+    inner.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) scale(${scale})`;
+  }
+
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const zoomIn = e.deltaY < 0;
+    const factor = 1.15;
+    const oldScale = scale;
+    scale = zoomIn ? scale * factor : scale / factor;
+    scale = Math.max(0.3, Math.min(scale, 5));
+
+    // Zoom towards mouse position (basic)
+    const rect = container.getBoundingClientRect();
+    const cx = e.clientX - rect.left - rect.width / 2;
+    const cy = e.clientY - rect.top - rect.height / 2;
+    offsetX = cx - (cx / oldScale) * scale;
+    offsetY = cy - (cy / oldScale) * scale;
+
+    updateTransform();
+  }, { passive: false });
+
+  container.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    isDragging = true;
+    inner.classList.add('dragging');
+    lastX = e.clientX;
+    lastY = e.clientY;
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    offsetX += dx;
+    offsetY += dy;
+    updateTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    inner.classList.remove('dragging');
+  });
+
+  // Expose a very simple pixel->map stub (you can refine with real metadata)
+  function pixelToMapCoords(clientX, clientY) {
+    const rect = container.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    // TODO: convert using real occupancy grid metadata
+    // For now, just return normalized (0..1) as placeholder
+    return {
+      map_x: x / rect.width,
+      map_y: y / rect.height
+    };
+  }
+
+  return {
+    pixelToMapCoords
+  };
+}
+
+const manualMap = makeZoomableMap('manualMapContainer', 'manualMapInner');
+const stationMap = makeZoomableMap('stationMapContainer', 'stationMapInner');
+
+/* ----------------------------- Joystick -------------------------- */
+const joystick = document.getElementById('joystick');
+const joystickStick = document.getElementById('joystickStick');
+const joystickToggleBtn = document.getElementById('joystickToggleBtn');
+
+let joystickEnabled = false;
+let joystickHeld = false;
+let joystickLinear = 0;
+let joystickAngular = 0;
+let joystickTimer = null;
+
+function setJoystickEnabled(enabled) {
+  joystickEnabled = enabled;
+  if (enabled) {
+    joystickToggleBtn.classList.remove('btn-toggle-off');
+    joystickToggleBtn.classList.add('btn-toggle-on');
+    joystickToggleBtn.textContent = 'ON';
+    startJoystickTimer();
+  } else {
+    joystickToggleBtn.classList.remove('btn-toggle-on');
+    joystickToggleBtn.classList.add('btn-toggle-off');
+    joystickToggleBtn.textContent = 'OFF';
+    stopJoystickTimer();
+    joystickHeld = false;
+    joystickLinear = 0;
+    joystickAngular = 0;
+    resetJoystickStick();
+    sendMovement(0, 0);
+  }
+}
+
+function startJoystickTimer() {
+  if (joystickTimer) return;
+  joystickTimer = setInterval(() => {
+    if (joystickHeld && joystickEnabled) {
+      // Manual tab joystick: linear *0.5, angular * -0.3 (done in sendMovement)
+      sendMovement(joystickLinear, joystickAngular, 'manual');
+    }
+  }, 100); // 10 Hz
+}
+
+function stopJoystickTimer() {
+  if (joystickTimer) {
+    clearInterval(joystickTimer);
+    joystickTimer = null;
+  }
+}
+
+function resetJoystickStick() {
+  joystickStick.style.left = '50%';
+  joystickStick.style.top = '50%';
+}
+
+function handleJoystickPointer(event) {
+  if (!joystickEnabled) return;
+  joystickHeld = true;
+
+  const rect = joystick.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const x = (event.clientX ?? event.touches[0].clientX);
+  const y = (event.clientY ?? event.touches[0].clientY);
+
+  let dx = x - centerX;
+  let dy = y - centerY;
+
+  const maxRadius = rect.width / 2;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist > maxRadius) {
+    const scale = maxRadius / dist;
+    dx *= scale;
+    dy *= scale;
+  }
+
+  joystickStick.style.left = 50 + (dx / maxRadius) * 50 + '%';
+  joystickStick.style.top  = 50 + (dy / maxRadius) * 50 + '%';
+
+  // Normalize
+  joystickLinear = -dy / maxRadius;  // forward/back
+  joystickAngular = dx / maxRadius;  // left/right
+}
+
+joystickToggleBtn.addEventListener('click', () => {
+  setJoystickEnabled(!joystickEnabled);
+});
+
+['mousedown', 'touchstart'].forEach(type => {
+  joystick.addEventListener(type, (e) => {
+    e.preventDefault();
+    handleJoystickPointer(e);
+  }, { passive: false });
+});
+
+['mousemove', 'touchmove'].forEach(type => {
+  window.addEventListener(type, (e) => {
+    if (!joystickHeld) return;
+    e.preventDefault();
+    handleJoystickPointer(e);
+  }, { passive: false });
+});
+
+['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(type => {
+  window.addEventListener(type, () => {
+    if (!joystickEnabled) return;
+    joystickHeld = false;
+    joystickLinear = 0;
+    joystickAngular = 0;
+    resetJoystickStick();
+    sendMovement(0, 0, 'manual');
+  }, { passive: true });
+});
+
+/* ----------------------------- D-Pad ----------------------------- */
+const dpadUp = document.getElementById('dpadUp');
+const dpadDown = document.getElementById('dpadDown');
+const dpadLeft = document.getElementById('dpadLeft');
+const dpadRight = document.getElementById('dpadRight');
+const dpadStop = document.getElementById('dpadStop');
+const stationJoystickToggleBtn = document.getElementById('stationJoystickToggleBtn');
+
+let dpadEnabled = false;
+let dpadTimer = null;
+let currentDpadVel = { lin: 0, ang: 0 };
+
+function setDpadEnabled(enabled) {
+  dpadEnabled = enabled;
+  [dpadUp, dpadDown, dpadLeft, dpadRight].forEach(btn => {
+    btn.disabled = !enabled;
+  });
+  if (enabled) {
+    stationJoystickToggleBtn.classList.remove('btn-toggle-off');
+    stationJoystickToggleBtn.classList.add('btn-toggle-on');
+    stationJoystickToggleBtn.textContent = 'ON';
+  } else {
+    stationJoystickToggleBtn.classList.remove('btn-toggle-on');
+    stationJoystickToggleBtn.classList.add('btn-toggle-off');
+    stationJoystickToggleBtn.textContent = 'OFF';
+    stopDpadTimer();
+    currentDpadVel = { lin: 0, ang: 0 };
+    sendMovement(0, 0, 'stations');
+  }
+}
+
+function startDpadTimer(lin, ang) {
+  if (!dpadEnabled) return;
+  currentDpadVel = { lin, ang };
+  if (!dpadTimer) {
+    dpadTimer = setInterval(() => {
+      sendMovement(currentDpadVel.lin, currentDpadVel.ang, 'stations');
+    }, 100);
+  }
+}
+
+function stopDpadTimer() {
+  if (dpadTimer) {
+    clearInterval(dpadTimer);
+    dpadTimer = null;
+  }
+}
+
+stationJoystickToggleBtn.addEventListener('click', () => {
+  setDpadEnabled(!dpadEnabled);
+});
+
+function bindDpadPress(button, lin, ang) {
+  button.addEventListener('mousedown', () => {
+    startDpadTimer(lin, ang);
+  });
+  button.addEventListener('mouseup', () => {
+    stopDpadTimer();
+    sendMovement(0, 0, 'stations');
+  });
+  button.addEventListener('mouseleave', () => {
+    stopDpadTimer();
+    sendMovement(0, 0, 'stations');
+  });
+}
+
+bindDpadPress(dpadUp, 0.2, 0.0);
+bindDpadPress(dpadDown, -0.2, 0.0);
+bindDpadPress(dpadLeft, 0.0, 0.5);
+bindDpadPress(dpadRight, 0.0, -0.5);
+
+dpadStop.addEventListener('click', () => {
+  // Emergency stop
+  emergencyStop();
+});
+
+/* -------------------------- Pose Mode ---------------------------- */
+const poseBtn = document.getElementById('poseBtn');
+let poseModeActive = false;
+
+poseBtn.addEventListener('click', () => {
+  poseModeActive = !poseModeActive;
+  if (poseModeActive) {
+    poseBtn.classList.add('pose-on');
+    poseBtn.textContent = '2D Pose: ON';
+    console.log('[INFO] Pose setting enabled. Click on map to set initial pose.');
+  } else {
+    poseBtn.classList.remove('pose-on');
+    poseBtn.textContent = '2D Pose: OFF';
+    console.log('[INFO] Pose setting disabled.');
+  }
+});
+
+document.getElementById('stationMapContainer').addEventListener('click', (e) => {
+  if (!poseModeActive) return;
+  const coords = stationMap.pixelToMapCoords(e.clientX, e.clientY);
+  console.log('[InitialPose] (placeholder) map coords', coords);
+  sendInitialPoseToBackend(coords.map_x, coords.map_y);
+});
+
+/* ------------------------ Stations Grid -------------------------- */
+const stationNameInput = document.getElementById('stationNameInput');
+const stationSaveBtn = document.getElementById('stationSaveBtn');
+const stationsGrid = document.getElementById('stationsGrid');
+const cancelGoalBtn = document.getElementById('cancelGoalBtn');
+
+let savedStations = {}; // name -> data (single or array)
+let stationCards = [];  // array of { name, el, goBtn, deleteBtn }
+
+function createStationCard(displayName) {
+  const card = document.createElement('div');
+  card.className = 'station-card';
+  card.dataset.displayName = displayName;
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'station-name';
+  nameEl.textContent = displayName;
+  card.appendChild(nameEl);
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'station-card-buttons';
+
+  const goBtn = document.createElement('button');
+  goBtn.className = 'station-card-go';
+  goBtn.textContent = 'GO';
+  goBtn.style.display = 'none';
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'station-card-delete';
+  deleteBtn.textContent = '🗑';
+  deleteBtn.style.display = 'none';
+
+  btnRow.appendChild(goBtn);
+  btnRow.appendChild(deleteBtn);
+  card.appendChild(btnRow);
+
+  // Selection behavior
+  card.addEventListener('click', () => {
+    stationCards.forEach(c => {
+      const isSelected = c.el === card;
+      c.el.classList.toggle('selected', isSelected);
+      c.goBtn.style.display = isSelected ? 'inline-block' : 'none';
+      c.deleteBtn.style.display = isSelected ? 'inline-block' : 'none';
+    });
+  });
+
+  // GO
+  goBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const name = displayName.replace(' (waypoints)', '');
+    gotoStation(name);
+  });
+
+  // Delete
+  deleteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const name = displayName.replace(' (waypoints)', '');
+    const confirmDelete = window.confirm(`Delete station '${name}'?`);
+    if (!confirmDelete) return;
+    deleteStation(name, card);
+  });
+
+  stationsGrid.appendChild(card);
+
+  stationCards.push({
+    name: displayName,
+    el: card,
+    goBtn,
+    deleteBtn
+  });
+}
+
+function deleteStation(name, cardEl) {
+  cardEl.remove();
+  stationCards = stationCards.filter(c => c.el !== cardEl);
+
+  // Remove from savedStations
+  delete savedStations[name];
+  // TODO: persist to backend (stations.json equivalent)
+  saveStationsToFile();
+  console.log(`[INFO] Station '${name}' deleted.`);
+}
+
+function saveStationsToFile() {
+  // This mirrors save_stations_to_file in Python.
+  // Here you can send savedStations to your backend via fetch/WebSocket.
+  console.log('[INFO] saveStationsToFile called, count:', Object.keys(savedStations).length);
+}
+
+/* Save station button click */
+stationSaveBtn.addEventListener('click', () => {
+  const name = stationNameInput.value.trim();
+  if (!name) {
+    alert('Please enter a station name.');
+    return;
+  }
+
+  // In original code, pose comes from ROS; here we just stub:
+  const pose = { x: 0, y: 0, orientation: { x:0, y:0, z:0, w:1 } };
+  saveCurrentStation(name, pose);
+  stationNameInput.value = '';
+});
+
+/* Equivalent to save_current_station() front-end side */
+function saveCurrentStation(name, pose) {
+  if (!pose) {
+    console.warn('No pose to save (stub). Implement real pose from ROS.');
+    return;
+  }
+
+  const station = {
+    x: pose.x,
+    y: pose.y,
+    orientation: {
+      x: pose.orientation.x,
+      y: pose.orientation.y,
+      z: pose.orientation.z,
+      w: pose.orientation.w
+    }
+  };
+
+  if (savedStations[name]) {
+    const existing = savedStations[name];
+    savedStations[name] = Array.isArray(existing) ? [...existing, station] : [existing, station];
+    console.log(`Appended new waypoint to station '${name}'`);
+  } else {
+    savedStations[name] = station;
+    console.log(`Saved new station '${name}'`);
+  }
+
+  // Remove any existing card with same base name
+  const displayName = Array.isArray(savedStations[name]) ? `${name} (waypoints)` : name;
+  stationCards.slice().forEach(c => {
+    const base = c.name.replace(' (waypoints)', '');
+    if (base === name) {
+      c.el.remove();
+      stationCards = stationCards.filter(x => x !== c);
+    }
+  });
+
+  createStationCard(displayName);
+  saveStationsToFile();
+  // TODO: send to backend as well
+}
+
+/* Cancel navigation */
+cancelGoalBtn.addEventListener('click', () => {
+  cancelNavigation();
+});
+
+/* ------------------------ ROS Hook Functions --------------------- */
+/**
+ * Send movement command.
+ * linear & angular are normalized joystick/D-pad values.
+ * For actual robot, apply scaling: lin*0.5, ang*-0.3 like Python.
+ * context: 'manual' or 'stations' tab.
+ */
+function sendMovement(linear, angular, context) {
+  const scaledLinear = linear * 0.5;
+  const scaledAngular = angular * -0.3;
+  console.log(`[MOVE] context=${context}, lin=${scaledLinear.toFixed(2)}, ang=${scaledAngular.toFixed(2)}`);
+
+  // TODO: Send Twist over WebSocket/ROS bridge here.
+}
+
+/** Emergency stop equivalent to stop_robot_immediately */
+function emergencyStop() {
+  console.log('[EMERGENCY] Emergency stop triggered.');
+  // Send zero velocity + cancel navigation
+  sendMovement(0, 0, 'stations');
+  cancelNavigation();
+}
+
+/** Navigation to station */
+function gotoStation(name) {
+  if (!savedStations[name]) {
+    alert(`No station named '${name}' found.`);
+    console.warn(`No station named '${name}' found.`);
+    return;
+  }
+  console.log(`[GOTO] Station '${name}'`, savedStations[name]);
+  // If savedStations[name] is list => NavigateThroughPoses
+  // else => single NavigateToPose
+  // TODO: implement backend call similar to goto_station() in Python
+}
+
+/** Cancel navigation (NavigateToPose + NavigateThroughPoses) */
+function cancelNavigation() {
+  console.log('[NAV] cancel_navigation() called.');
+  // TODO: implement backend call (CancelGoal for both action servers)
+}
+
+/** Initial pose publishing */
+function sendInitialPoseToBackend(x, y) {
+  console.log(`[InitialPose] Published at (${x.toFixed(2)}, ${y.toFixed(2)}) (stub)`);
+  // TODO: send PoseWithCovarianceStamped /initialpose to backend.
+}
+
+/* ------------------- Updating Odometry & Map --------------------- */
+/**
+ * These are example functions to be called when you receive ROS messages
+ * from your backend.
+ */
+function updateManualOdom(text) {
+  document.getElementById('manualOdom').textContent = text;
+}
+
+function updateStationOdom(text) {
+  document.getElementById('stationOdom').textContent = text;
+}
+
+/**
+ * Update map images.
+ * You might convert OccupancyGrid->image on backend and send URL,
+ * or send an encoded image blob.
+ */
+function updateMapImage(url) {
+  document.getElementById('manualMapImg').src = url;
+  document.getElementById('stationMapImg').src = url;
+}
+
+/* Example: when you load saved stations from backend at startup */
+function loadStationsFromBackend(stationsObj) {
+  savedStations = stationsObj || {};
+  stationsGrid.innerHTML = '';
+  stationCards = [];
+  Object.entries(savedStations).forEach(([name, data]) => {
+    const displayName = Array.isArray(data) ? `${name} (waypoints)` : name;
+    createStationCard(displayName);
+  });
+}
+
+/* ------------------------ Initial Dummy Data --------------------- */
+// Example: fake stations to visualize layout
+loadStationsFromBackend({
+  'Dock': { x: 1, y: 2, orientation: { x:0,y:0,z:0,w:1 } },
+  'Aisle-1': [
+    { x:0.5,y:0.5,orientation:{x:0,y:0,z:0,w:1} },
+    { x:1.0,y:1.0,orientation:{x:0,y:0,z:0,w:1} }
+  ]
+});
+updateManualOdom('Position (PCL): x=1.23, y=4.56');
+updateStationOdom('Position: x=1.23, y=4.56');
+
+</script>
+</body>
+</html>

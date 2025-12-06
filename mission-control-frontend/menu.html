@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SkyWatch Menu</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0d1117;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .menu-box {
+      width: 420px;
+      text-align: center;
+      background: #161b22;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+    }
+
+    h2 { margin-bottom: 25px; font-weight: 600; }
+
+    .option-btn {
+      display: block;
+      width: 100%;
+      padding: 18px;
+      margin: 10px 0;
+      background: #238636;
+      border: none;
+      font-size: 18px;
+      color: white;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .option-btn:hover { background: #2ea043; }
+  </style>
+</head>
+<body>
+
+  <div class="menu-box">
+    <h2>Select Operation</h2>
+
+    <button class="option-btn" onclick="location.href='commandcenter.html'">
+      🚁 Drone Command Center
+    </button>
+
+    <button class="option-btn" onclick="location.href='direction.html'">
+      🚜 UGV Control Center
+    </button>
+  </div>
+
+</body>
+</html>
