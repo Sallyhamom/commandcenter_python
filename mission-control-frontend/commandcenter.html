@@ -531,6 +531,75 @@
   .status-pill.ok  { background:#16381c; color:#4caf50; }
   .status-pill.bad { background:#3a1616; color:#f44336; }
 
+  .status-pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Default / unknown */
+  .status-unknown {
+    background: #555;
+    color: #fff;
+  }
+
+  /* Map to states */
+  .status-uninit,
+  .status-boot,
+  .status-calibrating,
+  .status-standby {
+    background: #444;
+    color: #f0f0f0;
+  }
+
+  .status-standby {
+    background: #2d6a4f;
+    color: #e9f5ee;
+  }
+
+  .status-active {
+    background: #1d3557;
+    color: #e0f2ff;
+  }
+
+  .status-critical {
+    background: #ffb703;
+    color: #1a1a1a;
+  }
+
+  .status-emergency,
+  .status-flight-termination {
+    background: #d00000;
+    color: #fff;
+  }
+
+  .status-poweroff {
+    background: #6c757d;
+    color: #f8f9fa;
+  }
+
+  .status-desc {
+    font-size: 11px;
+    opacity: 0.8;
+    margin-top: 2px;
+  }
+
+  .drone-marker {
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(34,197,94,0.9);
+    color: #021215;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid rgba(15,23,42,0.8);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  }
+
 
 </style>
 </head>
@@ -539,7 +608,7 @@
   <div class="app" id="app">
     <div class="topbar">
       <div class="brand">
-        <div class="logo"><img src="./arlogowithrvmt.png" height="100%"/></div>
+        <div class="logo"><img src="./static/arlogowithrvmt.png" height="100%"/></div>
         <div style="line-height:1; padding-top: 8px;">
           <div style="font-size:25px">COMMAND CENTER</div>
           <div style="font-size:18px;color:var(--muted)">Mission Control</div>
@@ -552,7 +621,7 @@
       <button class="btn" id="toggleFPV">▶ FPV</button>
       <button class="btn ghost" id="toggleNotification">🔔 </button>
       <button class="btn" id="themeToggle">🌙</button>
-      <button class="btn primary" id="gotoUgv"  onclick="location.href='direction.html'">UGV</button>
+      <button class="btn primary" id="gotoUgv"  onclick="location.href='/ugv-cc'">UGV</button>
     </div>
   </div>
 
@@ -909,9 +978,9 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>-->
 <!--<script type="text/javascript" src="http://gc.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=5_kmXRo0UtYPkMmvi2pueMJ6TwZtFe75E64hAzwNX3T7zLrRHvxN1HY6Y5-TWOn1wOXmCU82BwjNFhbXOfXXoZzIOwXMUFzny9SKZ2ckHOwGLIDBjuLnuE1JrU5lRPY9" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="http://gc.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cDovL3d3dy51bWVkaWFzZXJ2ZXIubmV0L3VtZWRpYXNlcnZlci9kZW1vaHRtbDVXZWJSVENwbGF5ZXIuaHRtbA"/><script src="http://www.umediaserver.net/umediaserver/webrtcadapter.js"></script>
 <script src="http://www.umediaserver.net/umediaserver/unrealwebrtcplayer.js"></script>-->
-<script src="./libs/leaflet.js"></script>
-<script src="./libs/lucide.min.js"></script>
-<script src="./libs/hls.js"></script>
+<script src="./static/libs/leaflet.js"></script>
+<script src="./static/libs/lucide.min.js"></script>
+<script src="./static/libs/hls.js"></script>
 <script>
 
   const MAV_STATE_LABELS = {
@@ -1016,7 +1085,7 @@
       setText("tele_mode", t.mode || "—");
       const statusEl = document.getElementById("tele_status");
       if (statusEl) {
-        statusEl.textContent = t.systemStatus || "OK";
+        statusEl.textContent =  getSystemStatusDescription(t.systemStatus);
         statusEl.classList.remove("muted");
       }
 
@@ -1051,9 +1120,9 @@
 
       // Camera / gimbal
       setText("tele_zoom", t.zoom != null ? `${formatNumber(t.zoom, 1)}×` : "—");
-      if (t.gimbalPitch != null || t.gimbalYaw != null) {
-        const pitch = t.gimbalPitch != null ? formatNumber(t.gimbalPitch, 0) : "—";
-        const yaw = t.gimbalYaw != null ? formatNumber(t.yaw, 0) : "—";
+      if (t.gimbal.pitchDeg != null || t.gimbal.yawDeg != null) {
+        const pitch = t.gimbal.pitchDeg != null ? formatNumber(t.gimbal.pitchDeg.toFixed(1), 0) : "—";
+        const yaw = t.gimbal.yawDeg != null ? formatNumber(t.gimbal.yawDeg.toFixed(1), 0) : "—";
         setText("tele_gimbal", `${pitch}° / ${yaw}°`);
       } else {
         setText("tele_gimbal", "—");
@@ -1089,11 +1158,32 @@
           const sysid = msg.sysid ?? msg.droneId ?? 1;
           telemetryBySysid[sysid] = msg;
 
+          let lat = null, lng = null;
+          if (typeof msg.lat === "number" && typeof msg.lng === "number") {
+            lat = msg.lat;
+            lng = msg.lng;
+          } else if (msg.position && typeof msg.position.lat === "number" && typeof msg.position.lon === "number") {
+            lat = msg.position.lat;
+            lng = msg.position.lon;
+          }
+
+           if (lat !== null && lng !== null) {
+              // move / create the marker
+              updateDroneOnMap(sysid, lat, lng);
+
+              // on the very first fix, center map on the drone
+              if (!firstDroneFix && typeof map !== "undefined") {
+                map.setView([lat, lng], 19); // adjust zoom if you like
+                firstDroneFix = true;
+              }
+            }
+
           const selectedSysid = parseInt(teleDroneSelect.value || "0", 10);
           if (sysid === selectedSysid) {
             updateTelemetryPanelFor(sysid);
           }
         }
+
 
         if (msg.type === "mission_ack") {
           addNotification(`Mission "${msg.missionName}" acknowledged by backend (${msg.status})`);
@@ -1219,9 +1309,9 @@
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);*/
 
-    L.marker(home).addTo(map)
+    /*L.marker(home).addTo(map)
       .bindPopup('Arrobot')
-      .openPopup();
+      .openPopup();*/
 
     const waypoints = []; // plain {lat,lng} objects
     const markers = [];
@@ -1231,6 +1321,17 @@
     let loopEnabled = false;
     let loopCount = 1;
 
+    const droneMarkers = {};  // { [sysid]: L.Marker }
+    const droneTrails  = {};  // { [sysid]: L.Polyline }
+    let firstDroneFix = false;
+
+    const droneIcon = L.icon({
+      iconUrl: "/static/drone.png", // <-- your image path
+      iconSize: [30, 30],                // size in px
+      iconAnchor: [15, 15],              // where the "center" is in the icon
+    });
+    const defaultSysid = 1;
+    droneMarkers[defaultSysid] = L.marker(home, { icon: droneIcon }).addTo(map);
     // Toggle loop mode
     document.getElementById('loopToggle').addEventListener('click', () => {
       loopEnabled = !loopEnabled;
@@ -1427,6 +1528,7 @@
     themeToggle.addEventListener('click', ()=>{
       document.documentElement.classList.toggle('light');
       themeToggle.textContent = document.documentElement.classList.contains('light') ? '☀️':'🌙';
+      //document.getElementsByClassName("logo")[0].src = isLight ? "/static/arlogowithrvmt-light.png" : "/static/arlogowithrvmt-dark.png";
     });
 
     //document.getElementById('gotoUgv').addEventListener('click', ()=>alert('Dispatch clicked'));
@@ -1634,12 +1736,22 @@
 
       try {
         if (missionStatus === "dispatched") {
-          await fetch('http://localhost:4000/api/dispatch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(missionData)
-          });
+          // send over WebSocket so Python can call send_waypoint_sequence_to_drone()
+          sendCommand("MISSION_UPLOAD", { mission: missionData });
+        } else {
+          // optional: keep a /api/missions save for drafts
+          try {
+            await fetch('http://localhost:4000/api/missions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(missionData)
+            });
+          } catch (err) {
+            console.error(err);
+            alert('⚠️ Error saving mission');
+          }
         }
+
       } catch (err) {
         console.error(err);
         alert('⚠️ Error saving mission');
@@ -1820,6 +1932,48 @@
     pollMavlinkStatus();
 
   });
+
+  function updateDroneOnMap(sysid, lat, lng) {
+    if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+      return;
+    }
+
+    const pos = L.latLng(lat, lng);
+
+    // --- Marker with image icon ---
+    let marker = droneMarkers[sysid];
+    if (!marker) {
+      marker = L.marker(pos, { icon: droneIcon }).addTo(map);
+      droneMarkers[sysid] = marker;
+    } else {
+      marker.setLatLng(pos);
+    }
+
+    // --- Trail / breadcrumb ---
+    let trail = droneTrails[sysid];
+    if (!trail) {
+      trail = L.polyline([pos], {
+        color: "#00ff88",
+        weight: 2,
+        opacity: 0.8,
+      }).addTo(map);
+      droneTrails[sysid] = trail;
+    } else {
+      const pts = trail.getLatLngs();
+      pts.push(pos);
+      if (pts.length > 500) pts.shift(); // keep it short
+      trail.setLatLngs(pts);
+    }
+  }
+
+  document.getElementById("centerOnAll").addEventListener("click", () => {
+  const selectedSysid = parseInt(teleDroneSelect.value || "0", 10);
+  const marker = droneMarkers[selectedSysid];
+  if (marker) {
+    map.panTo(marker.getLatLng());
+  }
+});
+
 </script>
 
 </body>

@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 import base64
 import json
 import os
@@ -6,17 +7,14 @@ import socket
 import struct
 import time
 from datetime import datetime
-from typing import Dict, Any, List, Set, Tuple
+from typing import Dict, Any, List, Set, Tuple, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-
-import subprocess
-import os
+import websockets
 
 RTSP_URL = "rtsp://192.168.144.26:8554/main.264"
-# RTSP_URL = "rtsp://rtspstream:POB-48SOLYWIPDJE5uX4v@zephyr.rtsp.stream/people"
 HLS_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "hls")
 HLS_PLAYLIST = os.path.join(HLS_OUTPUT_DIR, "stream.m3u8")
 
@@ -34,6 +32,8 @@ UDP_TARGET_PORT = 19856             # Drone/MK32E MAVLink Port
 # GCS identity in MAVLink
 GCS_SYS_ID = 255
 GCS_COMP_ID = 190
+MAV_CMD_REQUEST_MESSAGE = 512   # for testing
+GLOBAL_POSITION_INT_ID = 33     # for testing
 
 # MAVLink sequence (0–255)
 mav_seq = 0
@@ -62,16 +62,31 @@ if os.path.isdir(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 app.mount("/fpv", StaticFiles(directory=HLS_OUTPUT_DIR), name="fpv")
 
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "mission-control-frontend")
 
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+# IP / port of the IPC on the AMR:
+IPC_WS_URL = "ws://192.168.0.50:8765"   # change to your AMR IPC IP
+
+# ---------- STATE ----------
+stations: Dict[str, Any] = {}
+current_odom_text: str = "Waiting for odometry..."
+map_image_url: str = "/static/placeholder_map.png"
+STATIONS_FILE = os.path.join(os.path.dirname(__file__), "stations.json")
+
+
+# connection from FastAPI → IPC (AMR)
+ipc_ws: Optional[websockets.WebSocketClientProtocol] = None
+ipc_lock = asyncio.Lock()
+
 
 missions: List[Dict[str, Any]] = []
 notifications: List[Dict[str, Any]] = []
 last_telemetry_by_sysid: Dict[int, Dict[str, Any]] = {}
 
-connected_websockets: Set[WebSocket] = set()
+uav_clients: Set[WebSocket] = set()
+amr_clients: Set[WebSocket] = set()
 udp_transport = None  # type: ignore
 
 # MAVLink link status
@@ -90,8 +105,14 @@ MAVLINK_MSG_ID_HEARTBEAT = 0
 MAVLINK_MSG_ID_SYS_STATUS = 1
 MAVLINK_MSG_ID_ATTITUDE = 30
 MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
+MAVLINK_MSG_ID_MOUNT_ORIENTATION = 265
+MAVLINK_MSG_ID_GIMBAL_DEVICE_ATTITUDE_STATUS = 284
 
 MAV_MODE_FLAG_SAFETY_ARMED = 0x80  # from MAVLink spec
+
+
+def get_current_user(request: Request):
+    return "admin"
 
 
 def _decode_and_update_telemetry(sysid: int,
@@ -181,6 +202,45 @@ def _decode_and_update_telemetry(sysid: int,
             "vz": vz / 100.0,
             "heading": None if hdg == 0xFFFF else hdg / 100.0,
         }
+
+    elif msgid == MAVLINK_MSG_ID_MOUNT_ORIENTATION and len(payload) >= 12:
+        pitch, roll, yaw = struct.unpack_from("<fff", payload, 0)
+        t["gimbal"] = {
+            "pitchDeg": pitch,
+            "rollDeg": roll,
+            "yawDeg": yaw,
+        }
+
+    elif msgid == MAVLINK_MSG_ID_GIMBAL_DEVICE_ATTITUDE_STATUS and len(payload) >= 48:
+        # decode quaternion q = [w, x, y, z]
+        q0, q1, q2, q3 = struct.unpack_from("<ffff", payload, 0)
+
+        # convert quaternion → Euler
+        import math
+        # Yaw-Pitch-Roll convention — adjust if needed
+        ysqr = q2 * q2
+
+        t0 = +2.0 * (q0 * q1 + q2 * q3)
+        t1 = +1.0 - 2.0 * (q1 * q1 + ysqr)
+        roll = math.degrees(math.atan2(t0, t1))
+
+        t2 = +2.0 * (q0 * q2 - q3 * q1)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        pitch = math.degrees(math.asin(t2))
+
+        t3 = +2.0 * (q0 * q3 + q1 * q2)
+        t4 = +1.0 - 2.0 * (ysqr + q3 * q3)
+        yaw = math.degrees(math.atan2(t3, t4))
+
+        t["gimbal"] = {
+            "rollDeg": roll,
+            "pitchDeg": pitch,
+            "yawDeg": yaw,
+        }
+
+    if msgid in (265, 284):
+        print("🎯 Gimbal telemetry msgid", msgid, "sysid", sysid)
 
     # only keep telemetry for sysids that have sent heartbeat (or are sending one now)
     if sysid in valid_sysids_with_heartbeat or msgid == MAVLINK_MSG_ID_HEARTBEAT:
@@ -293,6 +353,13 @@ def build_command_long_packet(target_sysid: int, target_compid: int, command: in
     return bytes(frame)
 
 
+def request_gimbal_msgs(sysid):
+    # Request MOUNT_ORIENTATION
+    send_command_long(sysid, GIMBAL_COMP_ID, MAV_CMD_REQUEST_MESSAGE, [265, 1, 0, 0, 0, 0, 0])
+    # Request GIMBAL_DEVICE_ATTITUDE_STATUS
+    send_command_long(sysid, GIMBAL_COMP_ID, MAV_CMD_REQUEST_MESSAGE, [284, 1, 0, 0, 0, 0, 0])
+
+
 def send_command_long(target_sysid: int, target_compid: int, command: int, params):
     if udp_transport is None:
         print("❌ UDP transport not ready, cannot send command")
@@ -306,18 +373,32 @@ def send_command_long(target_sysid: int, target_compid: int, command: int, param
 # ------------------------
 # BROADCAST TO WS CLIENTS
 # ------------------------
-async def broadcast(obj: Dict[str, Any]) -> None:
-    if not connected_websockets:
+async def broadcast_uav(obj: Dict[str, Any]) -> None:
+    if not uav_clients:
         return
     text = json.dumps(obj)
-    disconnected = []
-    for ws in connected_websockets:
+    dead = []
+    for ws in uav_clients:
         try:
             await ws.send_text(text)
         except Exception:
-            disconnected.append(ws)
-    for ws in disconnected:
-        connected_websockets.discard(ws)
+            dead.append(ws)
+    for ws in dead:
+        uav_clients.discard(ws)
+
+
+async def broadcast_amr(obj: Dict[str, Any]) -> None:
+    if not amr_clients:
+        return
+    text = json.dumps(obj)
+    dead = []
+    for ws in amr_clients:
+        try:
+            await ws.send_text(text)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        amr_clients.discard(ws)
 
 
 # ------------------------
@@ -376,10 +457,10 @@ class MavlinkUDPProtocol(asyncio.DatagramProtocol):
             )
 
             # only broadcast for sysids we trust (with heartbeat)
-            if sysid in valid_sysids_with_heartbeat and connected_websockets:
+            if sysid in valid_sysids_with_heartbeat and uav_clients:
                 loop = asyncio.get_event_loop()
                 loop.create_task(
-                    broadcast({
+                    broadcast_uav({
                         "type": "telemetry",
                         **tel,
                     })
@@ -466,16 +547,146 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
 
     elif cmd == "MISSION_UPLOAD":
         print("🛰 Mission upload received:", mission)
-        asyncio.create_task(
-            broadcast({
-                "type": "mission_ack",
-                "status": "sent",
-                "missionName": mission.get("missionName", "Untitled"),
-            })
-        )
+        # Extract waypoints from mission sent by the UI
+        waypoints = mission.get("waypoints") or []
+        if not waypoints:
+
+            print("⚠️ No waypoints in mission, nothing to send")
+
+        else:
+
+            target = sysid or mission.get("droneSysId") or 1
+            loc = mission.get("location") or {}
+            default_alt = float(loc.get("alt", 50.0))
+
+            # Optional: hold 0 seconds at each waypoint
+
+            send_waypoint_sequence_to_drone(
+                waypoints=waypoints,
+                default_alt=default_alt,
+                target_sysid=int(target),
+                hold_time=0.0,
+            )
+
+        # still notify UI that we "sent" the mission
+
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(
+                broadcast_uav({
+                    "type": "mission_ack",
+                    "status": "sent",
+                    "missionName": mission.get("missionName", "Untitled"),
+                })
+            )
+
+        except RuntimeError:
+
+            # fallback if no running loop (shouldn't happen inside FastAPI)
+            asyncio.create_task(
+                broadcast_uav({
+                    "type": "mission_ack",
+                    "status": "sent",
+                    "missionName": mission.get("missionName", "Untitled"),
+                })
+
+            )
 
     else:
         print("Unknown command from UI:", cmd)
+
+
+def send_waypoint_sequence_to_drone(
+    waypoints: List[Dict[str, Any]],
+    default_alt: float,
+    target_sysid: int,
+    hold_time: float = 0.0,
+) -> None:
+
+    MAV_CMD_NAV_WAYPOINT = 16
+    target_comp_id = 1  # autopilot
+
+    if udp_transport is None:
+        print("❌ UDP transport not ready, cannot send waypoints")
+        return
+
+    for idx, wp in enumerate(waypoints):
+        # support both {lat,lng} and {lat,lon}
+        lat = wp.get("lat") or wp.get("latitude")
+        lon = wp.get("lng") or wp.get("lon") or wp.get("longitude")
+        alt = wp.get("alt", default_alt)
+
+        if lat is None or lon is None:
+            print(f"⚠️ Waypoint {idx} missing lat/lon, skipping:", wp)
+            continue
+
+        params = [
+            float(hold_time),  # param1: hold time (seconds)
+            0.0,               # param2: unused
+            0.0,               # param3: unused
+            0.0,               # param4: yaw (0 = unchanged)
+            float(lat),        # param5: target lat (deg)
+            float(lon),        # param6: target lon (deg)
+            float(alt),        # param7: target alt (m)
+        ]
+
+        print(
+            f"➡ Sending WP#{idx} "
+            f"lat={lat:.7f} lon={lon:.7f} alt={alt:.1f} "
+            f"to sysid={target_sysid}"
+        )
+        send_command_long(
+            target_sysid=target_sysid,
+            target_compid=target_comp_id,
+            command=MAV_CMD_NAV_WAYPOINT,
+            params=params,
+        )
+
+        # Small delay so we don't spam FC too fast
+        time.sleep(0.2)
+
+
+# ----------ROS HELPERS ----------
+def load_stations_from_file() -> None:
+    global stations
+    if not os.path.exists(STATIONS_FILE):
+        stations = {}
+        return
+    try:
+        with open(STATIONS_FILE, "r") as f:
+            stations = json.load(f)
+    except Exception as e:
+        print(f"[WARN] Failed to load stations file: {e}")
+        stations = {}
+
+
+def save_stations_to_file() -> None:
+    try:
+        with open(STATIONS_FILE, "w") as f:
+            json.dump(stations, f, indent=2)
+        print(f"[INFO] Saved {len(stations)} stations to {STATIONS_FILE}")
+    except Exception as e:
+        print(f"[ERROR] Failed to save stations: {e}")
+
+
+async def ipc_send(msg: Dict[str, Any]) -> None:
+    """Send a JSON message to the IPC on the AMR."""
+    global ipc_ws
+    data = json.dumps(msg)
+    async with ipc_lock:
+        if ipc_ws is None:
+            print("[IPC] not connected, dropping:", msg)
+            return
+        try:
+            await ipc_ws.send(data)
+        except Exception as e:
+            print(f"[IPC] send error: {e}")
+            # drop connection; background task will reconnect
+            try:
+                await ipc_ws.close()
+            except Exception:
+                pass
+            ipc_ws = None
 
 
 # ------------------------
@@ -522,8 +733,120 @@ async def login(body: Dict[str, Any]):
     username = body.get("username")
     password = body.get("password")
     if username == "admin" and password == "12345":
-        return {"success": True}
+        return RedirectResponse(url="/menu", status_code=303)
     return JSONResponse({"error": "Invalid credentials"}, status_code=401)
+
+
+@app.post("/api/test-mavlink")      # for testing
+async def test_mavlink(sysid: Optional[int] = None):
+    """
+    Fire a harmless MAVLink COMMAND_LONG (REQUEST_MESSAGE for GLOBAL_POSITION_INT)
+    so we can check that:
+      - UDP transport works
+      - Drone responds with telemetry
+    """
+    # 1) Choose target sysid
+    if sysid is None:
+        # Prefer a sysid that has sent HEARTBEAT
+        if valid_sysids_with_heartbeat:
+            target_sysid = sorted(valid_sysids_with_heartbeat)[0]
+        elif last_telemetry_by_sysid:
+            target_sysid = sorted(last_telemetry_by_sysid.keys())[0]
+        else:
+            target_sysid = 1  # fallback
+    else:
+        target_sysid = sysid
+
+    target_compid = 1  # autopilot
+
+    # 2) Check UDP is ready
+    if udp_transport is None:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "UDP transport not ready (no MAVLink socket). "
+                         "Check startup logs and UDP_LISTEN_HOST/PORT.",
+            },
+            status_code=500,
+        )
+
+    # 3) Build params for MAV_CMD_REQUEST_MESSAGE
+    # param1 = message ID to request (GLOBAL_POSITION_INT = 33)
+    params = [
+        float(GLOBAL_POSITION_INT_ID),  # param1: message id
+        1.0,                            # param2: request ON (1) or OFF (0)
+        0.0, 0.0, 0.0, 0.0, 0.0         # remaining unused
+    ]
+
+    # 4) Send the command
+    send_command_long(
+        target_sysid,
+        target_compid,
+        MAV_CMD_REQUEST_MESSAGE,
+        params,
+    )
+    print(
+        f"➡ TEST: sent MAV_CMD_REQUEST_MESSAGE ({GLOBAL_POSITION_INT_ID}) "
+        f"to sys={target_sysid} comp={target_compid}"
+    )
+
+    return {
+        "ok": True,
+        "info": "Sent REQUEST_MESSAGE for GLOBAL_POSITION_INT",
+        "target_sysid": target_sysid,
+        "target_compid": target_compid,
+        "requestedMessageId": GLOBAL_POSITION_INT_ID,
+    }
+
+
+@app.post("/api/test-gimbal-nudge")
+async def test_gimbal_nudge(sysid: Optional[int] = None):
+    """
+    Simple HTTP test to nudge the gimbal DOWN once.
+    Usage:
+      POST /api/test-gimbal-nudge          -> uses first heartbeat sysid or 1
+      POST /api/test-gimbal-nudge?sysid=5  -> forces sysid 5
+    """
+    # --- pick a target sysid ---
+    if sysid is not None:
+        try:
+            target_sys_id = int(sysid)
+        except (TypeError, ValueError):
+            target_sys_id = 1
+    else:
+        # If we already have heartbeats, pick the first one,
+        # otherwise fall back to 1
+        if valid_sysids_with_heartbeat:
+            target_sys_id = sorted(valid_sysids_with_heartbeat)[0]
+        else:
+            target_sys_id = 1
+
+    # --- call the same logic as the UI buttons ---
+    handle_command_from_ui({
+        "cmd": "GIMBAL_DOWN",
+        "sysid": target_sys_id,
+    })
+
+    return {
+        "ok": True,
+        "info": "Sent GIMBAL_DOWN one step",
+        "target_sys_id": target_sys_id,
+    }
+
+
+@app.get("/menu", response_class=HTMLResponse)
+async def menu_page():
+    return FileResponse(os.path.join(FRONTEND_DIR, "menu.html"))
+
+
+@app.get("/ugv-cc", response_class=HTMLResponse)
+async def amr_stations_page(request: Request, user: str = Depends(get_current_user)):
+    return FileResponse(os.path.join(FRONTEND_DIR, "direction.html"))
+
+
+@app.get("/uav-cc", response_class=HTMLResponse)
+async def amr_stations_page(request: Request, user: str = Depends(get_current_user)):
+    return FileResponse(os.path.join(FRONTEND_DIR, "commandcenter.html"))
 
 
 @app.get("/api/drones")
@@ -541,7 +864,7 @@ async def list_drones():
 
 
 # Serve main HTML (same as Node's login.html)
-@app.get("/")
+@app.get("/login")
 async def root():
     if os.path.isdir(FRONTEND_DIR):
         login_path = os.path.join(FRONTEND_DIR, "login.html")
@@ -571,7 +894,7 @@ async def mavlink_status():
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
-    connected_websockets.add(ws)
+    uav_clients.add(ws)
     print("🌐 WebSocket client connected")
 
     await ws.send_text(json.dumps({
@@ -602,7 +925,74 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         print("WebSocket client disconnected")
     finally:
-        connected_websockets.discard(ws)
+        uav_clients.discard(ws)
+
+
+@app.websocket("/ws/amr_stations")
+async def amr_stations_ws(websocket: WebSocket):
+    await websocket.accept()
+    amr_clients.add(websocket)
+    print("[WS] browser client connected (stations)")
+
+    # send current snapshot
+    await websocket.send_text(json.dumps({"type": "stations_data", "stations": stations}))
+    await websocket.send_text(json.dumps({"type": "odom_station", "text": current_odom_text}))
+    await websocket.send_text(json.dumps({"type": "map_update", "url": map_image_url}))
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                print("[WS] bad JSON from browser:", raw)
+                continue
+
+            msg_type = msg.get("type")
+
+            # ---- STATION SAVE/DELETE (handled locally) ----
+            if msg_type == "save_station":
+                name = (msg.get("name") or "").strip()
+                if not name:
+                    continue
+
+                # for now just create a placeholder; ROS/IPC can later fill pose
+                existing = stations.get(name)
+                if existing is None:
+                    stations[name] = {"x": 0, "y": 0}  # or leave {} if you prefer
+                # if you want to allow waypoints list, you can adapt this logic
+
+                save_stations_to_file()
+
+                # Optionally forward to IPC if connected
+                await ipc_send({"type": "save_station", "name": name})
+                continue
+
+            if msg_type == "delete_station":
+                name = (msg.get("name") or "").strip()
+                if name in stations:
+                    del stations[name]
+                    save_stations_to_file()
+                await ipc_send({"type": "delete_station", "name": name})
+                continue
+
+            # ---- OTHER COMMANDS: just forward to IPC / ROS2 ----
+            if msg_type in {
+                "goto_station",
+                "cancel_navigation",
+                "emergency_stop",
+                "move",
+                "set_initial_pose",
+            }:
+                await ipc_send(msg)
+                continue
+
+            print("[WS] unknown msg type from browser:", msg_type, msg)
+
+    except WebSocketDisconnect:
+        print("[WS] browser client disconnected (stations)")
+    finally:
+        amr_clients.discard(websocket)
 
 
 # ------------------------
@@ -611,7 +1001,9 @@ async def websocket_endpoint(ws: WebSocket):
 @app.on_event("startup")
 async def startup_event():
     global udp_transport
+    load_stations_from_file()
     loop = asyncio.get_running_loop()
+#   loop.create_task(broadcast_uav(...)) if it breaks in later versions
     udp_transport, _ = await loop.create_datagram_endpoint(
         lambda: MavlinkUDPProtocol(),
         local_addr=(UDP_LISTEN_HOST, UDP_LISTEN_PORT),
@@ -637,6 +1029,57 @@ async def startup_event():
         print("🎥 ffmpeg started for RTSP → HLS")
     except Exception as e:
         print("⚠️ Failed to start ffmpeg:", e)
+    asyncio.create_task(ipc_connector())
+
+
+async def ipc_connector():
+    """Background task: connect to IPC and listen for messages."""
+    global ipc_ws, stations, current_odom_text, map_image_url
+
+    while True:
+        try:
+            print(f"[IPC] Connecting to {IPC_WS_URL} ...")
+            async with websockets.connect(IPC_WS_URL) as ws:
+                print("[IPC] Connected.")
+                async with ipc_lock:
+                    ipc_ws = ws
+
+                # send initial stations we have on disk
+                await ipc_send({"type": "stations_data", "stations": stations})
+
+                async for raw in ws:
+                    try:
+                        msg = json.loads(raw)
+                    except Exception:
+                        print("[IPC] bad JSON from IPC:", raw)
+                        continue
+
+                    msg_type = msg.get("type")
+
+                    # Messages coming from IPC → forward to browsers
+                    if msg_type == "stations_data":
+                        stations = msg.get("stations", {}) or {}
+                        save_stations_to_file()
+                        await broadcast_amr({"type": "stations_data", "stations": stations})
+
+                    elif msg_type == "odom_station":
+                        current_odom_text = msg.get("text", current_odom_text)
+                        await broadcast_amr({"type": "odom_station", "text": current_odom_text})
+
+                    elif msg_type == "map_update":
+                        map_image_url = msg.get("url", map_image_url)
+                        await broadcast_amr({"type": "map_update", "url": map_image_url})
+
+                    else:
+                        print("[IPC] unhandled message from IPC:", msg)
+
+        except Exception as e:
+            print(f"[IPC] connection error: {e}")
+        finally:
+            async with ipc_lock:
+                ipc_ws = None
+        # retry every 3 seconds
+        await asyncio.sleep(3.0)
 
 
 # ------------------------

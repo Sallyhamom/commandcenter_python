@@ -1,13 +1,18 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
   <title>SkyWatch Menu</title>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
-      background: #0d1117;
-      color: white;
-      font-family: Arial, sans-serif;
+      background: radial-gradient(circle at top, #1f2933 0, #02040a 45%, #000000 100%);
+      color: #f5f5f5;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -15,43 +20,188 @@
     }
 
     .menu-box {
-      width: 420px;
+      width: 520px;
+      background: rgba(13, 17, 23, 0.96);
+      border-radius: 18px;
+      padding: 28px 30px 30px;
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.04),
+        0 24px 60px rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: 650;
       text-align: center;
-      background: #161b22;
-      padding: 40px;
-      border-radius: 12px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+      margin-bottom: 6px;
     }
 
-    h2 { margin-bottom: 25px; font-weight: 600; }
+    .subtitle {
+      font-size: 13px;
+      text-align: center;
+      color: #9ca3af;
+      margin-bottom: 24px;
+    }
 
-    .option-btn {
-      display: block;
+    .cards {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
       width: 100%;
-      padding: 18px;
-      margin: 10px 0;
-      background: #238636;
-      border: none;
-      font-size: 18px;
-      color: white;
-      border-radius: 10px;
+      padding: 14px 16px;
+      background: #161b22;
+      border-radius: 12px;
+      border: 1px solid #21262d;
       cursor: pointer;
+      text-align: left;
+      text-decoration: none;
+      color: inherit;
+      transition:
+        transform 0.12s ease-out,
+        box-shadow 0.12s ease-out,
+        border-color 0.12s ease-out,
+        background 0.12s ease-out;
     }
-    .option-btn:hover { background: #2ea043; }
+
+    .card:hover {
+      transform: translateY(-1px);
+      border-color: #2ea043;
+      background: #111827;
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    .card:active {
+      transform: translateY(0);
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.7);
+    }
+
+    .card-icon-wrap {
+      width: 56px;
+      height: 56px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 20%, #4ade80 0, #22c55e 40%, #14532d 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .card-icon-wrap.ugv {
+      background: radial-gradient(circle at 30% 20%, #60a5fa 0, #2563eb 40%, #0b1c3a 100%);
+    }
+
+    .card-icon {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+    }
+
+    .card-text-main {
+      flex: 1;
+    }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+
+    .card-subtitle {
+      font-size: 13px;
+      color: #9ca3af;
+    }
+
+    .chip {
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      color: #e5e7eb;
+      background: radial-gradient(circle at top left, rgba(148, 163, 184, 0.18), transparent);
+      white-space: nowrap;
+    }
+
+    .footer-note {
+      margin-top: 22px;
+      font-size: 11px;
+      text-align: center;
+      color: #6b7280;
+    }
+
+    @media (max-width: 560px) {
+      .menu-box {
+        width: 92vw;
+        padding: 20px 18px 22px;
+      }
+
+      .card {
+        padding: 12px 12px;
+      }
+
+      .card-icon-wrap {
+        width: 50px;
+        height: 50px;
+      }
+
+      .card-icon {
+        width: 38px;
+        height: 38px;
+      }
+    }
   </style>
 </head>
 <body>
 
   <div class="menu-box">
-    <h2>Select Operation</h2>
+    <div class="title">SkyWatch Control Hub</div>
+    <div class="subtitle">Choose the system you want to operate</div>
 
-    <button class="option-btn" onclick="location.href='commandcenter.html'">
-      🚁 Drone Command Center
-    </button>
+    <div class="cards">
 
-    <button class="option-btn" onclick="location.href='direction.html'">
-      🚜 UGV Control Center
-    </button>
+      <!-- Drone Command Center -->
+      <a class="card" href="/uav-cc">
+        <div class="card-icon-wrap">
+          <!-- Replace drone.png with your own icon; keep it in mission-control-frontend/ -->
+          <img src="drone.png" alt="Drone" class="card-icon">
+        </div>
+        <div class="card-text-main">
+          <div class="card-title">Drone Command Center</div>
+          <div class="card-subtitle">
+            Live FPV, telemetry and mission control for aerial vehicles.
+          </div>
+        </div>
+        <div class="chip">Aerial</div>
+      </a>
+
+      <!-- UGV / AMR Stations Control -->
+      <a class="card" href="/ugv-cc">
+        <div class="card-icon-wrap ugv">
+          <!-- Replace ugv.png with your own icon; keep it in mission-control-frontend/ -->
+          <img src="ugv.png" alt="UGV" class="card-icon">
+        </div>
+        <div class="card-text-main">
+          <div class="card-title">UGV / AMR Stations Control</div>
+          <div class="card-subtitle">
+            Configure stations, send navigation goals and supervise ground robots.
+          </div>
+        </div>
+        <div class="chip">Ground</div>
+      </a>
+
+    </div>
+
+    <div class="footer-note">
+      Tip: open in a separate tab for each system if you want to monitor both.
+    </div>
   </div>
 
 </body>
