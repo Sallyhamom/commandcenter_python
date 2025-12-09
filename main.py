@@ -37,6 +37,7 @@ GLOBAL_POSITION_INT_ID = 33     # for testing
 
 # MAVLink sequence (0–255)
 mav_seq = 0
+current_amr_pose = {}
 
 # ------------------------
 # GIMBAL STATE (deg)
@@ -49,7 +50,7 @@ GIMBAL_PITCH_MAX = 30.0    # slight up
 GIMBAL_YAW_MIN = -180.0
 GIMBAL_YAW_MAX = 180.0
 
-GIMBAL_COMP_ID = 154       # MAV_COMP_ID_GIMBAL; change to 1 to test via FC
+GIMBAL_COMP_ID = 1       # MAV_COMP_ID_GIMBAL; change to 1 to test via FC or 154
 
 # ------------------------
 # GLOBAL STATE
@@ -67,12 +68,12 @@ if os.path.isdir(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 # IP / port of the IPC on the AMR:
-IPC_WS_URL = "ws://192.168.0.50:8765"   # change to your AMR IPC IP
+IPC_WS_URL = "ws://10.72.65.193:8765"   # change to your AMR IPC IP
 
 # ---------- STATE ----------
 stations: Dict[str, Any] = {}
 current_odom_text: str = "Waiting for odometry..."
-map_image_url: str = "/static/placeholder_map.png"
+map_image_url: str = "/static/my_map.png"
 STATIONS_FILE = os.path.join(os.path.dirname(__file__), "stations.json")
 
 
@@ -84,6 +85,7 @@ ipc_lock = asyncio.Lock()
 missions: List[Dict[str, Any]] = []
 notifications: List[Dict[str, Any]] = []
 last_telemetry_by_sysid: Dict[int, Dict[str, Any]] = {}
+last_mavlink_addr_by_sysid: Dict[int, Tuple[str, int]] = {}
 
 uav_clients: Set[WebSocket] = set()
 amr_clients: Set[WebSocket] = set()
@@ -127,7 +129,7 @@ def _decode_and_update_telemetry(sysid: int,
         "sysid": sysid,
         "compid": compid,
     })
-
+    last_mavlink_addr_by_sysid[sysid] = addr
     # always basic fields
     t["compid"] = compid
     t["seq"] = seq
@@ -194,7 +196,7 @@ def _decode_and_update_telemetry(sysid: int,
             struct.unpack_from("<IiiiihhhH", payload, 0)
         t["position"] = {
             "lat": lat / 1e7,
-            "lon": lon / 1e7,
+            "lng": lon / 1e7,
             "alt": alt / 1000.0,
             "relAlt": rel_alt / 1000.0,
             "vx": vx / 100.0,
@@ -366,8 +368,15 @@ def send_command_long(target_sysid: int, target_compid: int, command: int, param
         return
 
     pkt = build_command_long_packet(target_sysid, target_compid, command, params)
-    udp_transport.sendto(pkt, (UDP_TARGET_HOST, UDP_TARGET_PORT))
-    print(f"➡ Sent COMMAND_LONG id={command} to {UDP_TARGET_HOST}:{UDP_TARGET_PORT} sys={target_sysid} comp={target_compid}")
+#    udp_transport.sendto(pkt, (UDP_TARGET_HOST, UDP_TARGET_PORT))
+    addr = last_mavlink_addr_by_sysid.get(target_sysid)
+    if addr is None:
+        addr = (UDP_TARGET_HOST, UDP_TARGET_PORT)  # fallback
+
+    udp_transport.sendto(pkt, addr)
+    print(f"➡ Sent COMMAND_LONG id={command} to {addr[0]}:{addr[1]} sys={target_sysid} comp={target_compid}")
+#    print(f"➡ Sent COMMAND_LONG id={command} to {UDP_TARGET_HOST}:{UDP_TARGET_PORT} "
+#          f"sys={target_sysid} comp={target_compid}")
 
 
 # ------------------------
@@ -888,6 +897,13 @@ async def mavlink_status():
     }
 
 
+@app.get("/api/amr_pose")
+async def get_amr_pose():
+    if not current_amr_pose:
+        return {"ok": False, "pose": None}
+    return {"ok": True, "pose": current_amr_pose}
+
+
 # ------------------------
 # WEBSOCKET ROUTE
 # ------------------------
@@ -1030,6 +1046,30 @@ async def startup_event():
     except Exception as e:
         print("⚠️ Failed to start ffmpeg:", e)
     asyncio.create_task(ipc_connector())
+    asyncio.create_task(gcs_keepalive_task())
+
+
+async def gcs_keepalive_task():
+    """Periodically poke the drone so it keeps sending us MAVLink."""
+    await asyncio.sleep(5.0)  # wait for startup
+    while True:
+        try:
+            # pick a sysid, same logic as /api/test-mavlink
+            if valid_sysids_with_heartbeat:
+                target_sysid = sorted(valid_sysids_with_heartbeat)[0]
+            elif last_telemetry_by_sysid:
+                target_sysid = sorted(last_telemetry_by_sysid.keys())[0]
+            else:
+                target_sysid = 1
+
+            target_compid = 1  # autopilot
+            params = [float(GLOBAL_POSITION_INT_ID), 1.0, 0, 0, 0, 0, 0]
+
+            send_command_long(target_sysid, target_compid, MAV_CMD_REQUEST_MESSAGE, params)
+        except Exception as e:
+            print("Keepalive error:", e)
+
+        await asyncio.sleep(2.0)  # every 2 seconds
 
 
 async def ipc_connector():
@@ -1069,6 +1109,17 @@ async def ipc_connector():
                     elif msg_type == "map_update":
                         map_image_url = msg.get("url", map_image_url)
                         await broadcast_amr({"type": "map_update", "url": map_image_url})
+
+                    elif msg_type == "amr_pose":
+                        global current_amr_pose
+                        current_amr_pose = {
+                            "x": msg.get("x"),
+                            "y": msg.get("y"),
+                            "theta": msg.get("theta"),
+                        }
+                        await broadcast_amr({
+                            "type": "amr_pose", **current_amr_pose,
+                        })
 
                     else:
                         print("[IPC] unhandled message from IPC:", msg)

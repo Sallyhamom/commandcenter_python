@@ -34,7 +34,7 @@
   /* Top bar */
   .topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);box-shadow:var(--shadow);border-bottom:1px solid var(--border);z-index:20;position:relative}
   .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:1px}
-  .brand .logo{height:300px;padding:0px 0px;border-radius:6px;/* background:linear-gradient(90deg,var(--accent),#031532); */color:rgb(165, 164, 196);font-weight:700}
+  .brand .logo{height:80px;padding:0px 0px;border-radius:6px;/* background:linear-gradient(90deg,var(--accent),#031532); */color:rgb(165, 164, 196);font-weight:700}
   .top-actions{display:flex;align-items:center;gap:10px}
   .btn{background:var(--panel);border:1px solid var(--border);padding:8px 10px;border-radius:8px;color:var(--text);cursor:pointer;backdrop-filter: blur(6px);position:relative;z-index:20}
   .btn.ghost{background:transparent}
@@ -982,7 +982,16 @@
 <script src="./static/libs/lucide.min.js"></script>
 <script src="./static/libs/hls.js"></script>
 <script>
+  const droneMarkers = {};  // { [sysid]: L.Marker }
+    const droneTrails  = {};  // { [sysid]: L.Polyline }
+    let firstDroneFix = false;
 
+    const droneIcon = L.icon({
+      iconUrl: "/static/drone.png", // <-- your image path
+      iconSize: [30, 30],                // size in px
+      iconAnchor: [15, 15],              // where the "center" is in the icon
+    });
+    const defaultSysid = 1;
   const MAV_STATE_LABELS = {
     0: "UNINIT",
     1: "BOOT",
@@ -1051,6 +1060,7 @@
     }
 
     function updateTelemetryPanelFor(sysid) {
+    debugger;
       const t = telemetryBySysid[sysid];
       if (!t) {
         // No telemetry yet – show "disconnected"
@@ -1102,15 +1112,16 @@
       }
 
       // Position
-      setText("tele_lat", t.lat != null ? formatNumber(t.lat, 5) : "—");
-      setText("tele_lng", t.lng != null ? formatNumber(t.lng, 5) : "—");
-      setText("tele_alt_amsl", t.altAmsl != null ? `${formatNumber(t.altAmsl, 1)} m` : "—");
-      setText("tele_alt_agl", t.altAgl != null ? `${formatNumber(t.altAgl, 1)} m` : "—");
-      setText("tele_speed", t.groundSpeed != null ? `${formatNumber(t.groundSpeed, 1)} m/s` : "—");
-      setText("tele_vspeed", t.verticalSpeed != null ? `${formatNumber(t.verticalSpeed, 1)} m/s` : "—");
-      setText("tele_heading", t.heading != null ? `${Math.round(t.heading)}°` : "—");
-      setText("tele_distWp", t.distanceToWp != null ? `${formatNumber(t.distanceToWp, 1)} m` : "—");
-
+      if(t.position){
+        setText("tele_lat", t.position.lat != null ? formatNumber(t.position.lat, 5) : "—");
+        setText("tele_lng", t.position.lng != null ? formatNumber(t.position.lng, 5) : "—");
+        setText("tele_alt_amsl", t.position.alt != null ? `${formatNumber(t.position.alt, 1)} m` : "—");
+        setText("tele_alt_agl", t.position.relAlt != null ? `${formatNumber(t.position.relAlt, 1)} m` : "—");
+        setText("tele_speed", t.groundSpeed != null ? `${formatNumber(t.groundSpeed, 1)} m/s` : "—");
+        setText("tele_vspeed", t.verticalSpeed != null ? `${formatNumber(t.verticalSpeed, 1)} m/s` : "—");
+        setText("tele_heading", t.position.heading != null ? `${Math.round(t.position.heading)}°` : "—");
+        setText("tele_distWp", t.distanceToWp != null ? `${formatNumber(t.distanceToWp, 1)} m` : "—");
+      }
       // System
       setText("tele_batt", t.batteryRemaining != null ? `${Math.round(t.batteryRemaining)}%` : "—");
       setText("tele_battVolt", t.batteryVoltage != null ? `${formatNumber(t.batteryVoltage, 1)} V` : "—");
@@ -1120,14 +1131,17 @@
 
       // Camera / gimbal
       setText("tele_zoom", t.zoom != null ? `${formatNumber(t.zoom, 1)}×` : "—");
-      if (t.gimbal.pitchDeg != null || t.gimbal.yawDeg != null) {
-        const pitch = t.gimbal.pitchDeg != null ? formatNumber(t.gimbal.pitchDeg.toFixed(1), 0) : "—";
-        const yaw = t.gimbal.yawDeg != null ? formatNumber(t.gimbal.yawDeg.toFixed(1), 0) : "—";
-        setText("tele_gimbal", `${pitch}° / ${yaw}°`);
-      } else {
+      if(!t.gimbal){
         setText("tele_gimbal", "—");
+      }else{
+        if (t.gimbal.pitchDeg != null || t.gimbal.yawDeg != null) {
+          const pitch = t.gimbal.pitchDeg != null ? formatNumber(t.gimbal.pitchDeg.toFixed(1), 0) : "—";
+          const yaw = t.gimbal.yawDeg != null ? formatNumber(t.gimbal.yawDeg.toFixed(1), 0) : "—";
+          setText("tele_gimbal", `${pitch}° / ${yaw}°`);
+        } else {
+          setText("tele_gimbal", "—");
+        }
       }
-
       if (t.recording) {
         const sec = t.recordingTime || 0;
         const mm = String(Math.floor(sec / 60)).padStart(2, "0");
@@ -1170,7 +1184,7 @@
            if (lat !== null && lng !== null) {
               // move / create the marker
               updateDroneOnMap(sysid, lat, lng);
-
+              console.log("here")
               // on the very first fix, center map on the drone
               if (!firstDroneFix && typeof map !== "undefined") {
                 map.setView([lat, lng], 19); // adjust zoom if you like
@@ -1267,7 +1281,7 @@
         drones.forEach(drone => {
           const label = drone.name
             ? `${drone.name} (SysID ${drone.sysid})`
-            : `Drone ${drone.sysid}`;
+            : `ARKA ${drone.sysid}`;
           const opt = document.createElement("option");
           opt.value = drone.sysid;
           opt.textContent = label;
@@ -1321,16 +1335,7 @@
     let loopEnabled = false;
     let loopCount = 1;
 
-    const droneMarkers = {};  // { [sysid]: L.Marker }
-    const droneTrails  = {};  // { [sysid]: L.Polyline }
-    let firstDroneFix = false;
 
-    const droneIcon = L.icon({
-      iconUrl: "/static/drone.png", // <-- your image path
-      iconSize: [30, 30],                // size in px
-      iconAnchor: [15, 15],              // where the "center" is in the icon
-    });
-    const defaultSysid = 1;
     droneMarkers[defaultSysid] = L.marker(home, { icon: droneIcon }).addTo(map);
     // Toggle loop mode
     document.getElementById('loopToggle').addEventListener('click', () => {
@@ -1939,8 +1944,8 @@
     }
 
     const pos = L.latLng(lat, lng);
-
     // --- Marker with image icon ---
+
     let marker = droneMarkers[sysid];
     if (!marker) {
       marker = L.marker(pos, { icon: droneIcon }).addTo(map);
@@ -1950,7 +1955,7 @@
     }
 
     // --- Trail / breadcrumb ---
-    let trail = droneTrails[sysid];
+    /*let trail = droneTrails[sysid];
     if (!trail) {
       trail = L.polyline([pos], {
         color: "#00ff88",
@@ -1963,7 +1968,7 @@
       pts.push(pos);
       if (pts.length > 500) pts.shift(); // keep it short
       trail.setLatLngs(pts);
-    }
+    }*/
   }
 
   document.getElementById("centerOnAll").addEventListener("click", () => {

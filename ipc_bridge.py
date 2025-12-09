@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#You have rclpy, nav2_msgs, geometry_msgs, nav_msgs, action_msgs, tf_transformations, websockets, numpy installed on the AMR.
 import asyncio
 import json
 import os

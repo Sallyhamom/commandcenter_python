@@ -33,7 +33,7 @@
   /* Top bar */
   .topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);box-shadow:var(--shadow);border-bottom:1px solid var(--border);z-index:20;position:relative}
   .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:1px}
-  .brand .logo{height:300px;padding:0px 0px;border-radius:6px;color:rgb(165, 164, 196);font-weight:700}
+  .brand .logo{height:80px;padding:0px 0px;border-radius:6px;color:rgb(165, 164, 196);font-weight:700}
   .top-actions{display:flex;align-items:center;gap:10px}
   .btn{background:var(--panel);border:1px solid var(--border);padding:8px 10px;border-radius:8px;color:var(--text);cursor:pointer;backdrop-filter: blur(6px);position:relative;z-index:20;font-size:13px}
   .btn.ghost{background:transparent}
@@ -68,6 +68,17 @@
     display:block;
   }
 
+  #amr-marker {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;          /* <= rounded square */
+    background: rgba(239, 68, 68, 0.9);  /* red-ish */
+    border: 2px solid rgba(248, 250, 252, 0.9);
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+    transform: translate(-50%, -50%) rotate(0deg);
+    pointer-events: none;
+  }
   .station-odom{
     position:absolute;
     left:10px;
@@ -127,7 +138,7 @@
     gap:4px;
     padding:8px;
     border-radius:10px;
-    background:rgba(15,23,42,0.9);
+    /*background:rgba(15,23,42,0.9);*/
     border:1px solid var(--border);
   }
   .dpad-btn{
@@ -338,7 +349,6 @@
 
     <div class="top-actions">
       <button class="btn ghost" id="themeToggle">🌙</button>
-      <button class="btn ghost" onclick="location.href='commandcenter.html'">UAV</button>
       <button class="btn primary" onclick="location.href='/uav-cc'">UAV</button>
     </div>
   </div>
@@ -348,9 +358,10 @@
 
     <!-- LEFT: MAP -->
     <div class="amr-map-area" id="mapArea">
-      <div class="amr-map-inner">
+      <div class="amr-map-inner" id="map-container">
         <!-- backend will update src via map_update message -->
-        <img id="stationMapImg" src="./static/placeholder_map.png" alt="Map">
+        <img id="stationMapImg" src="./static/my_map.png" alt="Map">
+        <div id="amr-marker"></div>
       </div>
 
       <!-- D-PAD + POSE OVERLAY -->
@@ -439,7 +450,6 @@
       document.documentElement.classList.toggle("light");
       themeToggle.textContent =
         document.documentElement.classList.contains("light") ? "☀️" : "🌙";
-      //document.getElementsByClassName("logo")[0].src = isLight ? "/static/arlogowithrvmt-light.png" : "/static/arlogowithrvmt-dark.png";
     });
 
     // ======== WEBSOCKET SETUP ========
@@ -456,7 +466,10 @@
     const stationsGrid = document.getElementById("stationsGrid");
     const stationCountLabel = document.getElementById("stationCountLabel");
     const stationOdom = document.getElementById("stationOdom");
+
     const stationMapImg = document.getElementById("stationMapImg");
+    const mapContainer = document.getElementById("map-container");
+    const amrMarker = document.getElementById("amr-marker");
 
     // local state: name -> station data from backend
     let stationMap = {};
@@ -472,6 +485,82 @@
         amrLinkStatus.textContent = "IPC: Disconnected";
         amrLinkStatus.classList.remove("status-ok");
         amrLinkStatus.classList.add("status-bad");
+      }
+    }
+
+    // ======== MAP / AMR MARKER CONFIG ========
+    // Origin of the map in world coords (meters)
+    const originX = 0.0;
+    const originY = 0.0;
+
+    // Map resolution: meters per pixel (adjust to your map metadata)
+    const resolution = 0.05; // 5 cm per pixel example
+
+    // Natural size of the map image (pixels in the file)
+    let mapPixelWidth = 0;
+    let mapPixelHeight = 0;
+
+    // When the image loads, record its real pixel size
+    stationMapImg.addEventListener("load", () => {
+      mapPixelWidth = stationMapImg.naturalWidth;
+      mapPixelHeight = stationMapImg.naturalHeight;
+    });
+
+    // TEMP: place AMR marker at map center before receiving real pose
+    function centerMarkerTemporarily() {
+      const containerWidth = mapContainer.clientWidth;
+      const containerHeight = mapContainer.clientHeight;
+
+      amrMarker.style.left = `${containerWidth / 2}px`;
+      amrMarker.style.top = `${containerHeight / 2}px`;
+      amrMarker.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+    }
+
+    // call once
+    centerMarkerTemporarily();
+
+    // remove after first real AMR pose message:
+    let firstPoseReceived = false;
+
+    // World (meters) -> image pixel coordinates
+    function worldToPixel(x, y) {
+      // meters -> pixels in the original image
+      const px = (x - originX) / resolution;
+      const py = (y - originY) / resolution;
+
+      // If map frame has y up, but image has y down, flip vertically
+      const pyFlipped = mapPixelHeight - py;
+
+      return { px, py: pyFlipped };
+    }
+
+    function updateMarker(x, y, theta) {
+      if (!mapPixelWidth || !mapPixelHeight) {
+        // image not loaded yet
+        return;
+      }
+
+      const { px, py } = worldToPixel(x, y);
+
+      // Map image pixels -> CSS pixels (container size)
+      const containerWidth = mapContainer.clientWidth;
+      const containerHeight = mapContainer.clientHeight;
+
+      const scaleX = containerWidth / mapPixelWidth;
+      const scaleY = containerHeight / mapPixelHeight;
+
+      const sx = px * scaleX;
+      const sy = py * scaleY;
+
+      amrMarker.style.left = `${sx}px`;
+      amrMarker.style.top = `${sy}px`;
+
+      if (theta !== undefined && theta !== null) {
+        // if theta is in radians:
+        const deg = theta * 180 / Math.PI;
+        amrMarker.style.transform = `translate(-50%, -50%) rotate(${deg}deg)`;
+      } else {
+        amrMarker.style.transform = `translate(-50%, -50%)`;
       }
     }
 
@@ -523,14 +612,29 @@
           stationMap = msg.stations || {};
           renderStations();
           break;
+
         case "odom_station":
           stationOdom.textContent = msg.text || "Waiting for odometry...";
           break;
+
         case "map_update":
           if (msg.url) {
             stationMapImg.src = msg.url;
           }
           break;
+
+        case "amr_pose": {
+          // Expected from backend / IPC:
+          // { type: "amr_pose", x: <meters>, y: <meters>, theta: <radians> }
+          const x = msg.x;
+          const y = msg.y;
+          const theta = msg.theta;
+          if (typeof x === "number" && typeof y === "number") {
+            updateMarker(x, y, theta);
+          }
+          break;
+        }
+
         default:
           console.log("[WS] unhandled message:", msg);
       }
@@ -542,7 +646,11 @@
     function renderStations() {
       stationsGrid.innerHTML = "";
       const entries = Object.entries(stationMap);
-      stationCountLabel.textContent = entries.length + " station" + (entries.length === 1 ? "" : "s") + " loaded";
+      stationCountLabel.textContent =
+        entries.length +
+        " station" +
+        (entries.length === 1 ? "" : "s") +
+        " loaded";
 
       entries.forEach(([name, data]) => {
         const card = document.createElement("div");
@@ -562,7 +670,9 @@
         if (Array.isArray(data)) {
           meta.textContent = data.length + " waypoint(s)";
         } else if (data && typeof data === "object") {
-          meta.textContent = `(${(data.x ?? data?.position?.x ?? 0).toFixed?.(2) || ""}, ${(data.y ?? data?.position?.y ?? 0).toFixed?.(2) || ""})`;
+          meta.textContent = `(${(data.x ?? data?.position?.x ?? 0)
+            .toFixed?.(2) || ""}, ${(data.y ?? data?.position?.y ?? 0)
+            .toFixed?.(2) || ""})`;
         } else {
           meta.textContent = "No pose data";
         }
@@ -653,7 +763,7 @@
       dpadToggle.classList.toggle("on", enabled);
       dpadToggle.textContent = enabled ? "DPAD: ON" : "DPAD: OFF";
 
-      Object.values(dpadButtons).forEach(btn => {
+      Object.values(dpadButtons).forEach((btn) => {
         if (btn === dpadButtons.stop) return; // stop always clickable
         if (enabled) {
           btn.classList.remove("disabled");
@@ -693,12 +803,16 @@
 
     function bindDpadButton(btn, lin, ang) {
       btn.addEventListener("mousedown", () => startDpadMove(lin, ang));
-      btn.addEventListener("touchstart", (e) => {
-        e.preventDefault();
-        startDpadMove(lin, ang);
-      }, { passive: false });
+      btn.addEventListener(
+        "touchstart",
+        (e) => {
+          e.preventDefault();
+          startDpadMove(lin, ang);
+        },
+        { passive: false }
+      );
 
-      ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach(ev =>
+      ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach((ev) =>
         btn.addEventListener(ev, () => {
           if (!dpadEnabled) return;
           stopDpadMove();
@@ -742,7 +856,7 @@
         px,
         py,
         width,
-        height
+        height,
       });
 
       // turn off after one click
@@ -750,9 +864,9 @@
       poseBtn.classList.remove("on");
       poseBtn.textContent = "2D Pose: OFF";
     });
-
   });
 </script>
+
 
 </body>
 </html>
