@@ -31,20 +31,58 @@
   .app {height:100vh;display:flex;flex-direction:column}
 
   /* Top bar */
-  .topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);box-shadow:var(--shadow);border-bottom:1px solid var(--border);z-index:20;position:relative}
+  .topbar{
+    height:50px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:10px 18px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+    box-shadow:var(--shadow);
+    border-bottom:1px solid var(--border);
+    z-index:20;
+    position:relative
+  }
   .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:1px}
   .brand .logo{height:80px;padding:0px 0px;border-radius:6px;color:rgb(165, 164, 196);font-weight:700}
   .top-actions{display:flex;align-items:center;gap:10px}
-  .btn{background:var(--panel);border:1px solid var(--border);padding:8px 10px;border-radius:8px;color:var(--text);cursor:pointer;backdrop-filter: blur(6px);position:relative;z-index:20;font-size:13px}
+  .btn{
+    background:var(--panel);
+    border:1px solid var(--border);
+    padding:8px 10px;
+    border-radius:8px;
+    color:var(--text);
+    cursor:pointer;
+    backdrop-filter: blur(6px);
+    position:relative;
+    z-index:20;
+    font-size:13px
+  }
   .btn.ghost{background:transparent}
   .btn.primary{background:linear-gradient(90deg,var(--accent),#3b82f6);color:white;border:none}
   .btn.danger{background:#b91c1c;color:white;border:none}
   .btn.small{padding:4px 8px;font-size:12px}
 
   /* layout */
-  .workspace{flex:1;display:flex;padding:12px;gap:12px;box-sizing:border-box}
+  .workspace{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    padding:12px;
+    gap:12px;
+    box-sizing:border-box
+  }
 
-  .amr-map-area{
+  /* TOP: map + video */
+  .top-row{
+    flex:1;
+    display:flex;
+    gap:12px;
+    min-height:0;
+  }
+
+  .amr-map-area,
+  .amr-video-area{
     flex:2;
     border-radius:10px;
     border:1px solid rgba(255,255,255,0.06);
@@ -60,12 +98,11 @@
     overflow:hidden;
   }
 
-  #stationMapImg{
-    width:100%;
-    height:100%;
-    object-fit:contain;
-    background:black;
-    display:block;
+  #stationMapImg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;   /* 🔥 THIS IS THE KEY */
+    display: block;
   }
 
   #amr-marker {
@@ -109,7 +146,7 @@
     font-size:12px;
     cursor:pointer;
     background:rgba(15,23,42,0.9);
-    color:var(--text);
+    color:white;
   }
 
   .pose-btn.on{
@@ -138,8 +175,7 @@
     gap:4px;
     padding:8px;
     border-radius:10px;
-    /*background:rgba(15,23,42,0.9);*/
-    border:1px solid var(--border);
+    /*border:1px solid var(--border);*/
   }
   .dpad-btn{
     border-radius:8px;
@@ -162,9 +198,47 @@
     font-weight:bold;
   }
 
-  /* Right station panel */
+  /* VIDEO AREA */
+  .amr-video-inner{
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+  }
+  .video-header{
+    padding:8px 10px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--muted);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:rgba(15,23,42,0.9);
+    border-bottom:1px solid var(--border);
+    z-index:2;
+  }
+  .video-body{
+    flex:1;
+    position:relative;
+    overflow:hidden;
+  }
+  #zedVideoFrame{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+    background:#020617;
+  }
+
+  /* BOTTOM ROW: stations left, actions right */
+  .bottom-row{
+    flex:0 0 auto;
+    display:flex;
+    gap:12px;
+    min-height:200px;
+  }
+
   .station-panel{
-    flex:1.5;
     background:var(--panel);
     border-radius:10px;
     border:1px solid var(--border);
@@ -172,6 +246,12 @@
     display:flex;
     flex-direction:column;
     overflow:hidden;
+  }
+  .station-panel.left{
+    flex:2;
+  }
+  .station-panel.right{
+    flex:1.2;
   }
 
   .station-panel-header{
@@ -304,9 +384,27 @@
   }
 
   /* bottom bar */
-  .bottombar{height:48px;background:linear-gradient(180deg, rgba(0,0,0,0.06), transparent);display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-top:1px solid var(--border);z-index:20;position:relative}
+  .bottombar{
+    height:30px;
+    background:linear-gradient(180deg, rgba(0,0,0,0.06), transparent);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:6px 12px;
+    border-top:1px solid var(--border);
+    z-index:20;
+    position:relative
+  }
   .status-strip{display:flex;gap:12px;align-items:center}
-  .stat{background:var(--panel);padding:8px 10px;border-radius:8px;border:1px solid var(--border);min-width:140px;text-align:center;font-size:12px}
+  .stat{
+    background:var(--panel);
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    min-width:140px;
+    text-align:center;
+    font-size:12px
+  }
 
   .status-pill {
     display: inline-block;
@@ -325,11 +423,181 @@
     .workspace{
       flex-direction:column;
     }
-    .amr-map-area,.station-panel{
+    .top-row{
+      flex-direction:column;
+    }
+    .amr-map-area,.amr-video-area{
       flex:none;
-      height:50%;
+      height:35%;
+    }
+    .bottom-row{
+      flex-direction:column;
+    }
+    .station-panel.left,
+    .station-panel.right{
+      flex:none;
+      height:auto;
     }
   }
+  .pose-dpad-row {
+    display: flex;
+    gap: 8px;
+  }
+  /* ===============================
+     NEW LEFT / RIGHT LAYOUT
+  ================================ */
+
+  .main-row {
+    flex: 1;
+    display: flex;
+    gap: 12px;
+    min-height: 0;
+  }
+
+  .left-panel {
+    flex: 2.2;
+    position: relative;
+    display: flex;
+    min-width: 0;
+  }
+
+  .right-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 320px;
+    overflow: hidden;
+  }
+
+  /* Map fills left */
+  .amr-map-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ===============================
+     VIDEO PIP (inside map)
+  ================================ */
+
+  .map-video-pip {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    width: 320px;
+    height: 180px;
+    background: #020617;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+    overflow: hidden;
+    z-index: 20;
+  }
+
+  .map-video-pip .video-header {
+    height: 28px;
+    background: rgba(15,23,42,0.9);
+    color: var(--muted);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+  }
+
+  .map-video-pip img {
+    width: 100%;
+    height: calc(100% - 28px);
+    object-fit: cover;
+    display: block;
+  }
+  /* ===============================
+     MAP PAN + ZOOM
+  ================================ */
+
+  .amr-map-inner {
+    cursor: grab;
+    overflow: hidden;
+  }
+
+  .amr-map-inner.dragging {
+    cursor: grabbing;
+  }
+
+  .map-transform {
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  /* ===============================
+     SWAPPABLE VIEW ROLES
+  ================================ */
+
+  .main-view {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+
+  .pip-view {
+    position: absolute;
+    width: 40%;
+    height: 38%;
+    right: 12px;
+    bottom: 12px;
+    z-index: 20;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+  }
+
+  .btn-outline-danger {
+    background: transparent;
+    color: #ef4444;
+    border: 1px solid #ef4444;
+  }
+
+  .btn-outline-danger:hover {
+    background: #ef4444;
+    color: #ffffff;
+  }
+
+  .btn-outline-danger:active {
+    background: #dc2626;
+    border-color: #dc2626;
+  }
+
+  .btn-outline-success {
+    background: transparent;
+    color: #22c55e;                 /* green-500 */
+    border: 1px solid #22c55e;
+  }
+
+  .btn-outline-success:hover {
+    background: #22c55e;
+    color: #ffffff;
+  }
+
+  .btn-outline-success:active {
+    background: #16a34a;            /* green-600 */
+    border-color: #16a34a;
+  }
+
+  .btn-outline-success:disabled,
+  .btn-outline-success.disabled {
+    color: #4ade80;
+    border-color: #4ade80;
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  #mapTransform {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
 </style>
 </head>
 <body>
@@ -356,80 +624,104 @@
   <!-- WORKSPACE -->
   <div class="workspace">
 
-    <!-- LEFT: MAP -->
-    <div class="amr-map-area" id="mapArea">
-      <div class="amr-map-inner" id="map-container">
-        <!-- backend will update src via map_update message -->
-        <img id="stationMapImg" src="./static/my_map.png" alt="Map">
-        <div id="amr-marker"></div>
-      </div>
+    <div class="main-row">
 
-      <!-- D-PAD + POSE OVERLAY -->
-      <div class="station-joystick-overlay">
-        <button class="pose-btn" id="poseBtn">2D Pose: OFF</button>
-        <button class="dpad-toggle" id="dpadToggle">DPAD: OFF</button>
-        <div class="dpad-grid" id="dpadGrid">
-          <div></div>
-          <button class="dpad-btn" id="dpadUp">↑</button>
-          <div></div>
+      <!-- LEFT: MAP + VIDEO -->
+      <div class="left-panel">
 
-          <button class="dpad-btn" id="dpadLeft">←</button>
-          <button class="dpad-btn stop" id="dpadStop">■</button>
-          <button class="dpad-btn" id="dpadRight">→</button>
-
-          <div></div>
-          <button class="dpad-btn" id="dpadDown">↓</button>
-          <div></div>
-        </div>
-      </div>
-
-      <div class="station-odom" id="stationOdom">
-        Waiting for odometry...
-      </div>
-    </div>
-
-    <!-- RIGHT: STATION PANEL -->
-    <div class="station-panel">
-      <div class="station-panel-header">
-        <div>
-          <div class="station-panel-header-title">Navigation Controls</div>
-          <div class="station-panel-header-sub">Save stations and send goals to AMR</div>
-        </div>
-        <button class="btn danger small" id="emergencyStopBtn">EMERGENCY STOP</button>
-      </div>
-
-      <div class="station-panel-body">
-        <div>
-          <div class="input-row">
-            <input type="text" id="stationNameInput" placeholder="Enter station name">
-            <button class="btn primary small" id="saveStationBtn">Save</button>
+        <!-- MAP -->
+        <div class="amr-map-area" id="mapArea">
+          <div id="mapView" class="main-view">
+            <div class="amr-map-inner" id="map-container">
+              <div id="mapTransform" class="map-transform">
+                <img id="stationMapImg">
+                <!--<div id="amr-marker"></div>-->
+              </div>
+            </div>
           </div>
-          <div class="stations-help">
-            The AMR’s current pose will be stored as this station on the robot.
+
+          <!-- VIDEO -->
+          <div id="videoView" class="pip-view">
+            <div class="video-header">ZED Camera</div>
+            <img id="zedVideoFrame">
+          </div>
+
+          <!-- DPAD + POSE -->
+          <div class="station-joystick-overlay">
+            <div class="pose-dpad-row">
+              <button class="pose-btn" id="poseBtn">2D Pose: OFF</button>
+              <button class="dpad-toggle" id="dpadToggle">DPAD: OFF</button>
+            </div>
+            <div class="dpad-grid" id="dpadGrid">
+              <div></div>
+              <button class="dpad-btn" id="dpadUp">↑</button>
+              <div></div>
+              <button class="dpad-btn" id="dpadLeft">←</button>
+              <button class="dpad-btn stop" id="dpadStop">■</button>
+              <button class="dpad-btn" id="dpadRight">→</button>
+              <div></div>
+              <button class="dpad-btn" id="dpadDown">↓</button>
+              <div></div>
+            </div>
+          </div>
+
+          <div class="station-odom" id="stationOdom">
+            Waiting for odometry...
           </div>
         </div>
 
-        <div class="station-actions-top">
-          <div style="font-size:13px;font-weight:600;">Stations</div>
-          <button class="btn small" id="cancelGoalBtn">Cancel Navigation</button>
-        </div>
-        <div class="stations-help">
-          Click a card, then <strong>GO</strong> to start navigation. Use <strong>2D Pose</strong> above the map for initial pose.
-        </div>
+      </div>
 
-        <div class="stations-grid-wrapper">
-          <div class="stations-grid" id="stationsGrid">
-            <!-- station cards will be injected here -->
+      <!-- RIGHT: DETAILS -->
+      <div class="right-panel">
+
+        <!-- RIGHT: STATION PANEL -->
+        <div class="station-panel">
+          <div class="station-panel-header">
+            <div>
+              <div class="station-panel-header-title">Navigation Controls</div>
+              <div class="station-panel-header-sub">Save stations and send goals to AMR</div>
+            </div>
+            <button class="btn danger small" id="emergencyStopBtn">STOP</button>
+          </div>
+
+          <div class="station-panel-body">
+            <div>
+              <div class="input-row">
+                <input type="text" id="stationNameInput" placeholder="Enter station name">
+                <button class="btn btn-outline-success small" id="saveStationBtn">Save</button>
+              </div>
+              <div class="stations-help">
+                The AMR’s current pose will be stored as this station on the robot.
+              </div>
+            </div>
+
+            <div class="station-actions-top">
+              <div style="font-size:13px;font-weight:600;">Stations</div>
+              <button class="btn btn-outline-danger small" id="cancelGoalBtn">Cancel Navigation</button>
+            </div>
+            <div class="stations-help">
+              Click a card, then <strong>GO</strong> to start navigation. Use <strong>2D Pose</strong> above the map for initial pose.
+            </div>
+
+            <div class="stations-grid-wrapper">
+              <div class="stations-grid" id="stationsGrid">
+                <!-- station cards will be injected here -->
+              </div>
+            </div>
+
+            <div class="station-footer-line">
+              <span id="stationCountLabel">0 stations loaded</span>
+             <!-- <span id="wsStatusLabel">WS: connecting…</span>-->
+            </div>
           </div>
         </div>
 
-        <div class="station-footer-line">
-          <span id="stationCountLabel">0 stations loaded</span>
-          <span id="wsStatusLabel">WS: connecting…</span>
-        </div>
       </div>
+
     </div>
   </div>
+
 
   <!-- BOTTOM BAR -->
   <div class="bottombar">
@@ -444,12 +736,19 @@
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {
+    let amrMarker = null;
     // THEME TOGGLE
     const themeToggle = document.getElementById("themeToggle");
     themeToggle.addEventListener("click", () => {
       document.documentElement.classList.toggle("light");
       themeToggle.textContent =
         document.documentElement.classList.contains("light") ? "☀️" : "🌙";
+      document.getElementsByClassName("logo")[0].children[0].src =
+        document.documentElement.classList.contains('light')
+          ? "/static/arrobotlogowithrvmt_light.png"
+          : "/static/arlogowithrvmt.png";
+      document.getElementsByClassName("logo")[0].children[0].height =
+        document.documentElement.classList.contains('light') ? 90 : 80;
     });
 
     // ======== WEBSOCKET SETUP ========
@@ -469,13 +768,13 @@
 
     const stationMapImg = document.getElementById("stationMapImg");
     const mapContainer = document.getElementById("map-container");
-    const amrMarker = document.getElementById("amr-marker");
 
-    // local state: name -> station data from backend
+    const zedVideoFrame = document.getElementById("zedVideoFrame");
+
     let stationMap = {};
     let selectedStationName = null;
 
-    function setWsStatus(text, ok) {
+    /*function setWsStatus(text, ok) {
       wsStatusLabel.textContent = text;
       if (ok) {
         amrLinkStatus.textContent = "IPC: Connected";
@@ -486,63 +785,43 @@
         amrLinkStatus.classList.remove("status-ok");
         amrLinkStatus.classList.add("status-bad");
       }
-    }
+    }*/
 
     // ======== MAP / AMR MARKER CONFIG ========
-    // Origin of the map in world coords (meters)
     const originX = 0.0;
     const originY = 0.0;
+    const resolution = 0.05; // adjust to your map
 
-    // Map resolution: meters per pixel (adjust to your map metadata)
-    const resolution = 0.05; // 5 cm per pixel example
-
-    // Natural size of the map image (pixels in the file)
     let mapPixelWidth = 0;
     let mapPixelHeight = 0;
 
-    // When the image loads, record its real pixel size
     stationMapImg.addEventListener("load", () => {
       mapPixelWidth = stationMapImg.naturalWidth;
       mapPixelHeight = stationMapImg.naturalHeight;
     });
 
-    // TEMP: place AMR marker at map center before receiving real pose
-    function centerMarkerTemporarily() {
-      const containerWidth = mapContainer.clientWidth;
-      const containerHeight = mapContainer.clientHeight;
-
-      amrMarker.style.left = `${containerWidth / 2}px`;
-      amrMarker.style.top = `${containerHeight / 2}px`;
-      amrMarker.style.transform = `translate(-50%, -50%) rotate(0deg)`;
-    }
-
-    // call once
-    centerMarkerTemporarily();
-
-    // remove after first real AMR pose message:
-    let firstPoseReceived = false;
-
-    // World (meters) -> image pixel coordinates
     function worldToPixel(x, y) {
-      // meters -> pixels in the original image
       const px = (x - originX) / resolution;
       const py = (y - originY) / resolution;
-
-      // If map frame has y up, but image has y down, flip vertically
       const pyFlipped = mapPixelHeight - py;
-
       return { px, py: pyFlipped };
     }
 
+    function ensureAmrMarker() {
+      if (amrMarker) return;
+
+      amrMarker = document.createElement("div");
+      amrMarker.id = "amr-marker";
+      mapTransform.appendChild(amrMarker);
+    }
+
     function updateMarker(x, y, theta) {
-      if (!mapPixelWidth || !mapPixelHeight) {
-        // image not loaded yet
-        return;
-      }
+      if (!mapPixelWidth || !mapPixelHeight) return;
+
+      // Create marker only on first valid pose
+      ensureAmrMarker();
 
       const { px, py } = worldToPixel(x, y);
-
-      // Map image pixels -> CSS pixels (container size)
       const containerWidth = mapContainer.clientWidth;
       const containerHeight = mapContainer.clientHeight;
 
@@ -556,7 +835,6 @@
       amrMarker.style.top = `${sy}px`;
 
       if (theta !== undefined && theta !== null) {
-        // if theta is in radians:
         const deg = theta * 180 / Math.PI;
         amrMarker.style.transform = `translate(-50%, -50%) rotate(${deg}deg)`;
       } else {
@@ -564,18 +842,19 @@
       }
     }
 
+
     function connectWs() {
-      setWsStatus("WS: connecting…", false);
+      //setWsStatus("WS: connecting…", false);
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
-        setWsStatus("WS: connected", true);
+        //setWsStatus("WS: connected", true);
         console.log("[WS] connected");
       };
 
       socket.onclose = () => {
         console.warn("[WS] disconnected");
-        setWsStatus("WS: disconnected", false);
+       // setWsStatus("WS: disconnected", false);
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
@@ -624,13 +903,18 @@
           break;
 
         case "amr_pose": {
-          // Expected from backend / IPC:
-          // { type: "amr_pose", x: <meters>, y: <meters>, theta: <radians> }
           const x = msg.x;
           const y = msg.y;
           const theta = msg.theta;
           if (typeof x === "number" && typeof y === "number") {
             updateMarker(x, y, theta);
+          }
+          break;
+        }
+
+        case "zed_frame": {
+          if (msg.jpeg && zedVideoFrame) {
+            zedVideoFrame.src = "data:image/jpeg;base64," + msg.jpeg;
           }
           break;
         }
@@ -695,7 +979,6 @@
           ev.stopPropagation();
           if (confirm(`Delete station "${name}"?`)) {
             sendWs({ type: "delete_station", name });
-            // local optimistic update; backend will send stations_data later
             delete stationMap[name];
             if (selectedStationName === name) selectedStationName = null;
             renderStations();
@@ -764,7 +1047,7 @@
       dpadToggle.textContent = enabled ? "DPAD: ON" : "DPAD: OFF";
 
       Object.values(dpadButtons).forEach((btn) => {
-        if (btn === dpadButtons.stop) return; // stop always clickable
+        if (btn === dpadButtons.stop) return;
         if (enabled) {
           btn.classList.remove("disabled");
         } else {
@@ -859,14 +1142,111 @@
         height,
       });
 
-      // turn off after one click
       poseMode = false;
       poseBtn.classList.remove("on");
       poseBtn.textContent = "2D Pose: OFF";
     });
+
+    // ===============================
+    // MAP PAN + ZOOM
+    // ===============================
+    const mapTransform = document.getElementById("mapTransform");
+
+    let scale = 1;
+    let translateX = 0;
+    let translateY = 0;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+
+    function updateMapTransform() {
+      mapTransform.style.transform =
+        `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    }
+
+    // Mouse wheel zoom
+    mapContainer.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+
+      const rect = mapContainer.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+
+      translateX -= offsetX * (zoomFactor - 1);
+      translateY -= offsetY * (zoomFactor - 1);
+
+      scale *= zoomFactor;
+      scale = Math.min(Math.max(scale, 0.4), 4);
+
+      updateMapTransform();
+    }, { passive: false });
+
+    // Drag pan
+    mapContainer.addEventListener("mousedown", (e) => {
+      isDragging = true;
+      startX = e.clientX - translateX;
+      startY = e.clientY - translateY;
+      mapContainer.classList.add("dragging");
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+      translateX = e.clientX - startX;
+      translateY = e.clientY - startY;
+      updateMapTransform();
+    });
+
+    window.addEventListener("mouseup", () => {
+      isDragging = false;
+      mapContainer.classList.remove("dragging");
+    });
+
+    // ===============================
+    // MAP ↔ VIDEO SWAP
+    // ===============================
+    const mapView = document.getElementById("mapView");
+    const videoView = document.getElementById("videoView");
+
+    let videoIsMain = false;
+
+    function swapViews() {
+      videoIsMain = !videoIsMain;
+
+      if (videoIsMain) {
+        mapView.className = "pip-view";
+        videoView.className = "main-view";
+        document.getElementsByClassName("station-joystick-overlay")[0].style.display = 'none';
+      } else {
+        mapView.className = "main-view";
+        videoView.className = "pip-view";
+        document.getElementsByClassName("station-joystick-overlay")[0].style.display = 'flex';
+      }
+    }
+
+    videoView.addEventListener("click", swapViews);
+    mapView.addEventListener("click", () => {
+      if (videoIsMain) swapViews();
+    });
+    /*
+    // TEMP: place AMR marker at map center before receiving real pose
+    function centerMarkerTemporarily() {
+      const containerWidth = mapContainer.clientWidth;
+      const containerHeight = mapContainer.clientHeight;
+
+      amrMarker.style.left = `${containerWidth / 2}px`;
+      amrMarker.style.top = `${containerHeight / 2}px`;
+      amrMarker.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+    }
+
+    // call once
+    centerMarkerTemporarily();
+
+    // remove after first real AMR pose message:
+    let firstPoseReceived = false;
+*/
   });
 </script>
-
 
 </body>
 </html>

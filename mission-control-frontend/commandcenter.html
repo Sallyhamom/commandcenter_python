@@ -32,14 +32,19 @@
   .app {height:100vh;display:flex;flex-direction:column}
 
   /* Top bar */
-  .topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);box-shadow:var(--shadow);border-bottom:1px solid var(--border);z-index:20;position:relative}
+  .topbar{height:50px;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);box-shadow:var(--shadow);border-bottom:1px solid var(--border);z-index:20;position:relative}
   .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:1px}
   .brand .logo{height:80px;padding:0px 0px;border-radius:6px;/* background:linear-gradient(90deg,var(--accent),#031532); */color:rgb(165, 164, 196);font-weight:700}
   .top-actions{display:flex;align-items:center;gap:10px}
   .btn{background:var(--panel);border:1px solid var(--border);padding:8px 10px;border-radius:8px;color:var(--text);cursor:pointer;backdrop-filter: blur(6px);position:relative;z-index:20}
   .btn.ghost{background:transparent}
   .btn.primary{background:linear-gradient(90deg,var(--accent),#3b82f6);color:white;border:none}
-
+  #fpv-img{
+    width: 20px; /* Adjust size as needed */
+    height: auto;
+    background-color:#FFF;
+    vertical-align: middle; /* Aligns image and text vertically */
+  }
   /* layout */
   .workspace{flex:1;display:flex;position:relative}
 
@@ -58,7 +63,7 @@
   .panel .small{font-size:13px;color:var(--muted);margin-bottom:8px}
 
   /* map area */
-  .map-area{flex:1;margin:12px;border-radius:10px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,0.02)}
+  .map-area{flex:1;margin:6px;border-radius:10px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,0.02)}
 
   /* Leaflet map full size and behind UI */
   #map {position:absolute;inset:0;z-index:0;}
@@ -81,7 +86,7 @@
     right: 15px;
     width: 450px;
     height: 480px;   
-    max-height: 50vh;
+    max-height: 60vh;
     background: rgba(15, 18, 25, 0.75);
     border: 1px solid rgba(255,255,255,0.15);
     border-radius: 14px;
@@ -96,7 +101,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 12px;
+    padding: 2px 6px;
     background: rgba(255,255,255,0.05);
     border-bottom: 1px solid rgba(255,255,255,0.1);
     font-size: 13px;
@@ -202,7 +207,7 @@
   .tool{background:var(--panel);border:1px solid var(--border);padding:8px;border-radius:12px;backdrop-filter: blur(6px);cursor:pointer}
 
   /* bottom bar */
-  .bottombar{height:48px;background:linear-gradient(180deg, rgba(0,0,0,0.06), transparent);display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-top:1px solid var(--border);z-index:20;position:relative}
+  .bottombar{height:30px;background:linear-gradient(180deg, rgba(0,0,0,0.06), transparent);display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-top:1px solid var(--border);z-index:20;position:relative}
   .status-strip{display:flex;gap:12px;align-items:center}
   .stat{background:var(--panel);padding:8px 10px;border-radius:8px;border:1px solid var(--border);min-width:140px;text-align:center}
   /* Notification panel */
@@ -599,8 +604,83 @@
     border: 1px solid rgba(15,23,42,0.8);
     box-shadow: 0 2px 6px rgba(0,0,0,0.5);
   }
+  .plate {
+    position: absolute;
+    top: 10%;
+    left: 96.5%;
+    width: 40px;
+    height: 40px;
+    border-radius: 40px;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #ccc, #aaa);
+    box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.1), inset 2px 2px 1px rgba(255, 255, 255, 0.5);
+    z-index:20;
+    pointer-events:auto
+  }
 
+  .plate::before {
+    content: '';
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    background: linear-gradient(135deg, #aaa, #eee);
+    border-radius: 100%;
+    -webkit-filter: blur(1px)
+  }
 
+  .plate::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    background: rgba(200, 0, 0, 1);
+    -webkit-filter: blur(7px);
+    transition: all .5s
+  }
+
+  .plate.on::after{background: rgba(0, 200, 0, 1);}
+
+  #arm-disarm{
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #ccc, #aaa);
+    box-shadow: 1px 1px 1px rgba(0, 0, 0, 0.1), inset 1px 1px 0px rgba(180, 255, 180, 0.5);
+    cursor: pointer;
+    z-index: 20;
+    pointer-events:auto
+  }
+  #arm-disarm::after{
+    content:'OFF';
+    position:absolute;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    font-size:7px;
+    font-weight:500;
+    text-align:center;
+    line-height:20px;
+    color:rgb(200,0,0);
+    text-shadow:-1px -1px 0px rgba(0,0,0,0.5), 1px 1px 0px rgba(255,255,255,0.5);
+    z-index:21;
+    transition:all .5s
+  }
+
+  .plate.on #arm-disarm::after{
+      content:'ON';
+      color:rgb(0,200,0);
+  }
 </style>
 </head>
 <body>
@@ -618,7 +698,7 @@
     <div class="top-actions">
       <button class="btn ghost" id="toggleLeft">☰ Mission</button>
       <button class="btn ghost" id="toggleRight">📡 Telemetry</button>
-      <button class="btn" id="toggleFPV">▶ FPV</button>
+      <button class="btn" id="toggleFPV"><img id="fpv-img" src="./static/video-player.png"></button>
       <button class="btn ghost" id="toggleNotification">🔔 </button>
       <button class="btn" id="themeToggle">🌙</button>
       <button class="btn primary" id="gotoUgv"  onclick="location.href='/ugv-cc'">UGV</button>
@@ -673,7 +753,7 @@
             </button>
           </div>
           <div class="section-title">Mission Details</div>
-          
+
           <div class="form-group">
             <label for="missionName">Mission Name</label>
             <input id="missionName" value="Sky Watch" />
@@ -691,7 +771,7 @@
           </div>
 
           <div class="form-group">
-            <label for="alt">Altitude (m): 
+            <label for="alt">Altitude (m):
               <span id="altValue">39</span>
             </label>
             <input type="range" id="alt" min="0" max="100" value="39" step="1" />
@@ -891,15 +971,15 @@
     <div class="map-area" id="mapArea">
       <div id="map"></div>
       <!-- markers -->
-      
+
 
       <!-- FPV -->
       <div class="fpv" id="fpv" style="display:none">
 
         <div class="fpv-header">
-          <div class="title">H3D-11 • Matrice 300 RTK</div>
+          <div class="title"></div>
           <div class="fpv-actions">
-            <button id="closeFPV" class="btn small">✕</button>
+            <button id="closeFPV" class="btn small" onclick="closeFPV()">✕</button>
           </div>
         </div>
 
@@ -949,7 +1029,11 @@
 
 
       </div>
+      <div class="plate">
+        <div class="button" id="arm-disarm">
 
+        </div>
+      </div>
 
       <!-- right tools -->
       <div class="right-tools">
@@ -1060,7 +1144,6 @@
     }
 
     function updateTelemetryPanelFor(sysid) {
-    debugger;
       const t = telemetryBySysid[sysid];
       if (!t) {
         // No telemetry yet – show "disconnected"
@@ -1167,7 +1250,6 @@
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        console.log(msg);
         if (msg.type === "telemetry") {
           const sysid = msg.sysid ?? msg.droneId ?? 1;
           telemetryBySysid[sysid] = msg;
@@ -1334,7 +1416,246 @@
     // Add loop variables
     let loopEnabled = false;
     let loopCount = 1;
+    let arm_bool = false;
+        // --- Mission simulation state (tracking-style) ---
+    let simRunning = false;
+    let simFrameId = null;
+    let routePoints = [];   // [L.LatLng, ...]
+    let segIndex = 0;       // current segment index (between routePoints[i] -> routePoints[i+1])
+    let segProgress = 0;    // 0..1 along current segment
+    const simSpeed = 4;    // m/s (adjust to taste)
+    let lastSimTs = null;
 
+    function stopSimulation() {
+      simRunning = false;
+      if (simFrameId) cancelAnimationFrame(simFrameId);
+      simFrameId = null;
+      lastSimTs = null;
+    }
+    // return an array of L.LatLng representing the orbit path (closed loop)
+    function generateOrbitPoints(shape, options = {}, samples = 64) {
+      const pts = [];
+
+      if (!shape) return pts;
+
+      if (shape === 'circle') {
+        const radius = options.radius || 50; // meters
+        const center = options.center || home;
+        // sample evenly around the circle
+        for (let i = 0; i < samples; i++) {
+          const theta = (i / samples) * Math.PI * 2;
+          const dLat = Math.cos(theta) * (radius / 111111.0);
+          const dLng = Math.sin(theta) * (radius / (111111.0 * Math.cos(center.lat * Math.PI / 180)));
+          pts.push(L.latLng(center.lat + dLat, center.lng + dLng));
+        }
+      } else if (shape === 'square' || shape === 'rectangle') {
+        const center = options.center || home;
+        const width = options.width || options.radius || 200;   // meters
+        const height = options.height || options.radius || 200; // meters
+
+        // corners in lat/lng
+        const halfW = metersToLng(width / 2, center.lat);
+        const halfH = metersToLat(height / 2);
+        const corners = [
+          [center.lat + halfH, center.lng - halfW],
+          [center.lat + halfH, center.lng + halfW],
+          [center.lat - halfH, center.lng + halfW],
+          [center.lat - halfH, center.lng - halfW]
+        ];
+        // create a path by sampling each edge
+        const edgeSamples = Math.max(3, Math.floor(samples / 4));
+        for (let i = 0; i < 4; i++) {
+          const a = corners[i];
+          const b = corners[(i + 1) % 4];
+          for (let s = 0; s < edgeSamples; s++) {
+            const frac = s / edgeSamples;
+            const lat = a[0] + (b[0] - a[0]) * frac;
+            const lng = a[1] + (b[1] - a[1]) * frac;
+            pts.push(L.latLng(lat, lng));
+          }
+        }
+      } else if (shape === 'custom') {
+        // options.corners expected: [[lat,lng],...]
+        const corners = options.corners || [];
+        if (corners.length >= 2) {
+          // sample each edge
+          const totalEdges = corners.length;
+          const edgeSamples = Math.max(3, Math.floor(samples / totalEdges));
+          for (let i = 0; i < totalEdges; i++) {
+            const a = corners[i];
+            const b = corners[(i + 1) % totalEdges];
+            for (let s = 0; s < edgeSamples; s++) {
+              const frac = s / edgeSamples;
+              const lat = a[0] + (b[0] - a[0]) * frac;
+              const lng = a[1] + (b[1] - a[1]) * frac;
+              pts.push(L.latLng(lat, lng));
+            }
+          }
+        }
+      }
+
+      // ensure closed loop (last = first)
+      if (pts.length > 0 && !pts[0].equals(pts[pts.length - 1])) {
+        pts.push(pts[0]);
+      }
+
+      return pts;
+    }
+
+    function startSimulationFromMission(missionData) {
+      if (!waypoints.length && (!missionData.orbit || (missionData.orbit && missionData.orbit.length === 0))) {
+        alert("Add at least one waypoint or an orbit to simulate.");
+        return;
+      }
+
+      // starting position: current drone pos (if exists) else home
+      const startPos =
+        (droneMarkers[defaultSysid] && droneMarkers[defaultSysid].getLatLng()) ||
+        home;
+
+      // build route points array (L.LatLng objects)
+      const pts = [];
+      pts.push(L.latLng(startPos.lat, startPos.lng));
+
+      // add explicit waypoints from the UI
+      waypoints.forEach(wp => pts.push(L.latLng(wp.lat, wp.lng)));
+
+      // add orbit trail if orbit selected in missionData or loopEnabled
+      // missionData.shape expected to be 'circle'|'square'|'rectangle'|'custom'
+      if (missionData.shape) {
+        // create orbit options to pass to generateOrbitPoints
+        const orbitOpts = Object.assign({}, missionData.orbit || {});
+        orbitOpts.center = missionData.orbitCenter || home;
+        const orbitPts = generateOrbitPoints(missionData.shape, orbitOpts, 96); // more samples for smooth trail
+
+        if (orbitPts.length > 0) {
+          // if loopEnabled and loopCount > 1, repeat orbit points loopCount times
+          const repeats = (missionData.loopEnabled && missionData.loopCount > 1) ? missionData.loopCount : 1;
+          for (let r = 0; r < repeats; r++) {
+            // append orbit points but omit first point on repeats to avoid duplicates
+            for (let i = 0; i < orbitPts.length - 1; i++) {
+              pts.push(orbitPts[i]);
+            }
+          }
+          // finally append the closing point of orbit
+          pts.push(orbitPts[orbitPts.length - 1]);
+        }
+      } else if (loopEnabled && loopCount > 1 && waypoints.length > 0) {
+        // if only waypoint-looping is desired (not orbit), repeat waypoints
+        for (let r = 1; r < loopCount; r++) {
+          waypoints.forEach(wp => pts.push(L.latLng(wp.lat, wp.lng)));
+        }
+      }
+
+      // ensure final leg returns to home
+      pts.push(L.latLng(home.lat, home.lng));
+
+      // convert to routePoints used by the simulation engine
+      routePoints = pts.slice(); // already L.LatLng objects
+      segIndex = 0;
+      segProgress = 0;
+      lastSimTs = null;
+
+      // Reset trail polyline for the drone so it follows the route freshly
+      if (droneTrails[defaultSysid]) {
+        map.removeLayer(droneTrails[defaultSysid]);
+        delete droneTrails[defaultSysid];
+      }
+
+      // snap drone to start
+      updateDroneOnMap(defaultSysid, startPos.lat, startPos.lng);
+      map.panTo(startPos);
+
+      simRunning = true;
+      if (simFrameId) cancelAnimationFrame(simFrameId);
+      simFrameId = requestAnimationFrame(stepSimulation);
+
+      console.log("▶ Simulation started with", routePoints.length - 1, "segments (including return-to-home)");
+    }
+
+
+    function stepSimulation(ts) {
+      if (!simRunning) return;
+
+      if (lastSimTs == null) {
+        lastSimTs = ts;
+        simFrameId = requestAnimationFrame(stepSimulation);
+        return;
+      }
+
+      const dt = (ts - lastSimTs) / 1000; // seconds
+      lastSimTs = ts;
+
+      if (routePoints.length < 2) {
+        stopSimulation();
+        return;
+      }
+
+      // we might finish multiple segments in one frame, so use a loop
+      let distToTravel = simSpeed * dt;
+
+      while (distToTravel > 0 && segIndex < routePoints.length - 1) {
+        const from = routePoints[segIndex];
+        const to = routePoints[segIndex + 1];
+        const segLen = map.distance(from, to); // in meters
+
+        if (segLen < 0.01) {
+          // degenerate segment, skip
+          segIndex++;
+          segProgress = 0;
+          continue;
+        }
+
+        // how much fraction of this segment we move in this frame
+        const segRemaining = 1 - segProgress;
+        const segRemainingDist = segRemaining * segLen;
+
+        if (distToTravel >= segRemainingDist) {
+          // we finish this segment and move on
+          distToTravel -= segRemainingDist;
+          segIndex++;
+          segProgress = 0;
+
+          // snap to exact waypoint
+          updateDroneOnMap(defaultSysid, to.lat, to.lng);
+        } else {
+          // we move inside this segment
+          const fracMove = distToTravel / segLen;
+          segProgress += fracMove;
+          distToTravel = 0;
+
+          // interpolate between from & to
+          const lat = from.lat + (to.lat - from.lat) * segProgress;
+          const lng = from.lng + (to.lng - from.lng) * segProgress;
+          updateDroneOnMap(defaultSysid, lat, lng);
+        }
+      }
+
+      if (segIndex >= routePoints.length - 1) {
+        console.log("✅ Simulation finished all waypoints");
+        stopSimulation();
+        // remove trail now that mission finished (so the trail disappears on completion)
+        clearTrail(defaultSysid);
+        return;
+      }
+
+      simFrameId = requestAnimationFrame(stepSimulation);
+    }
+
+    //clearing the trails after simulation is completed
+    function clearTrail(sysid) {
+      try {
+        if (!sysid && sysid !== 0) sysid = defaultSysid;
+        const t = droneTrails[sysid];
+        if (t) {
+          map.removeLayer(t);
+          delete droneTrails[sysid];
+          console.log(`🧹 Cleared trail for sysid ${sysid}`);
+        }
+      } catch (e) {
+        console.warn("clearTrail failed", e);
+      }
+    }
 
     droneMarkers[defaultSysid] = L.marker(home, { icon: droneIcon }).addTo(map);
     // Toggle loop mode
@@ -1461,54 +1782,52 @@
     function metersToLng(m, lat) { return m / (111111 * Math.cos(lat * Math.PI / 180)); }
 
     function drawOrbit(shape, options = {}) {
-      if (orbitLayer) map.removeLayer(orbitLayer);
+      if (orbitLayer) {
+        map.removeLayer(orbitLayer);
+        orbitLayer = null;
+      }
       cornerMarkers.forEach(m => map.removeLayer(m));
       cornerMarkers = [];
 
-      if (shape === 'circle') {
-        orbitLayer = L.circle(home, {
-          radius: options.radius,
-          color: '#ff9900',
-          fillColor: '#ffaa00',
-          fillOpacity: 0.2,
-          weight: 2
-        }).addTo(map);
-        map.fitBounds(orbitLayer.getBounds());
-      } else if (shape === 'square' || shape === 'rectangle') {
-        const w = metersToLng(options.width, home.lat);
-        const h = metersToLat(options.height);
-        const corners = [
-          [home.lat + h/2, home.lng - w/2],
-          [home.lat + h/2, home.lng + w/2],
-          [home.lat - h/2, home.lng + w/2],
-          [home.lat - h/2, home.lng - w/2]
+      // generate orbit path as LatLng array
+      const samples = options.samples || 64;
+      const center = options.center || home;
+      let orbitPoints = generateOrbitPoints(shape, Object.assign({}, options, { center }), samples);
+
+      if (orbitPoints.length === 0) return;
+
+      // display orbit polyline (trail) and also keep it as orbitLayer
+      orbitLayer = L.polyline(orbitPoints, {
+        color: '#ff9900',
+        weight: 2,
+        opacity: 0.9,
+        dashArray: shape === 'circle' ? null : '4,6'
+      }).addTo(map);
+
+      // Also draw small corner markers for rectangles/custom for edit handles
+      if (shape === 'rectangle' || shape === 'square' || shape === 'custom') {
+        const corners = options.corners || [
+          [center.lat + 0.001, center.lng - 0.001],
+          [center.lat + 0.001, center.lng + 0.001],
+          [center.lat - 0.001, center.lng + 0.001],
+          [center.lat - 0.001, center.lng - 0.001]
         ];
-        orbitLayer = L.polygon(corners, {
-          color:'#ff9900',
-          fillColor:'#ffaa00',
-          fillOpacity:0.2,
-          weight:2
-        }).addTo(map);
-        map.fitBounds(orbitLayer.getBounds());
-      } else if (shape === 'custom') {
-        orbitLayer = L.polygon(options.corners, {
-          color:'#ff9900',
-          fillColor:'#ffaa00',
-          fillOpacity:0.2,
-          weight:2
-        }).addTo(map);
-        options.corners.forEach((corner, i) => {
-          const m = L.marker(corner, { draggable:true }).addTo(map);
-          m.on('drag', (e)=>{
-            const latlngs = orbitLayer.getLatLngs()[0];
-            latlngs[i] = e.target.getLatLng();
-            orbitLayer.setLatLngs([latlngs]);
+        corners.forEach((c, i) => {
+          const m = L.marker(c, { draggable: true }).addTo(map);
+          m.on('drag', (e) => {
+            // update orbit when corners moved
+            const newCorners = corners.map((cc, idx) => idx === i ? [e.target.getLatLng().lat, e.target.getLatLng().lng] : cc);
+            options.corners = newCorners;
+            drawOrbit(shape, options);
           });
           cornerMarkers.push(m);
         });
-        map.fitBounds(orbitLayer.getBounds());
       }
+
+      // fit bounds to orbit
+      map.fitBounds(orbitLayer.getBounds());
     }
+
 
     // UI logic
     const panelLeft = document.getElementById('panel-left');
@@ -1529,11 +1848,21 @@
     closeRight.addEventListener('click', ()=>{ panelRight.classList.remove('active'); });
     document.getElementById('openRightSmall').addEventListener('click', ()=>{ panelRight.classList.toggle('active'); });
 
-    toggleFPV.addEventListener('click', ()=>{ fpv.style.display = fpv.style.display==='none' ? 'flex':'none'; startFPV();});
+    //toggleFPV.addEventListener('click', ()=>{ fpv.style.display = fpv.style.display==='none' ? 'flex':'none'; startFPV();});
+    toggleFPV.addEventListener("click", () => {
+      const fpv = document.getElementById("fpv");
+      if (fpv.style.display === "none" || fpv.style.display === "") {
+        openFPV();
+      } else {
+        closeFPV();
+      }
+    });
+    document.getElementById("closeFPV").onclick = closeFPV;
     themeToggle.addEventListener('click', ()=>{
       document.documentElement.classList.toggle('light');
       themeToggle.textContent = document.documentElement.classList.contains('light') ? '☀️':'🌙';
-      //document.getElementsByClassName("logo")[0].src = isLight ? "/static/arlogowithrvmt-light.png" : "/static/arlogowithrvmt-dark.png";
+      document.getElementsByClassName("logo")[0].children[0].src = document.documentElement.classList.contains('light') ? "/static/arrobotlogowithrvmt_light.png" : "/static/arlogowithrvmt.png";
+      document.getElementsByClassName("logo")[0].children[0].height = document.documentElement.classList.contains('light') ?90:80;
     });
 
     //document.getElementById('gotoUgv').addEventListener('click', ()=>alert('Dispatch clicked'));
@@ -1624,7 +1953,7 @@
 
         <div id="circleInputs">
           <label>Radius (meters): </label>
-          <input type="number" id="radiusInput" value="100" min="50" step="10">
+          <input type="number" id="radiusInput" value="50" min="50" step="10">
         </div>
 
         <div id="rectInputs" style="display:none;">
@@ -1701,10 +2030,26 @@
       }
     }
 
-    document.getElementById('saveMission').addEventListener('click', () => saveMission('draft'));
-    document.getElementById('dispatch').addEventListener('click', () => saveMission('dispatched'));
+    document.getElementById('saveMission').addEventListener('click', () =>
+      saveMission('draft', { simulate: false })
+    );
 
-    async function saveMission(statusOverride) {
+    document.getElementById('saveMissionbottom').addEventListener('click', () =>
+      saveMission('draft', { simulate: false })
+    );
+
+    // "Simulate" button: don’t change status, just run simulation
+    document.getElementById('simulate').addEventListener('click', () =>
+      saveMission('draft', { simulate: true })
+    );
+
+    // "Dispatch" now = mark as dispatched + run simulation (no real upload)
+    document.getElementById('dispatch').addEventListener('click', () =>{
+      saveMission('dispatched', { simulate: true });
+      panelLeft.classList.remove('active');
+    });
+
+    async function saveMission(statusOverride, options = {}) {
       const missionName = document.getElementById('missionName')?.value || "Untitled Mission";
       const missionStatus = statusOverride || document.getElementById('missionStatus')?.value || 'draft';
       const lat = parseFloat(document.getElementById('lat').value);
@@ -1720,7 +2065,7 @@
           scheduledAt = new Date(`${date}T${time}`);
         }
       }
-
+      document.getElementById("currentMission").textContent = missionName;
       const missionData = {
         missionName,
         shape: document.getElementById('shapeSelect')?.value || null,
@@ -1739,29 +2084,34 @@
         droneSysId
       };
 
-      try {
-        if (missionStatus === "dispatched") {
-          // send over WebSocket so Python can call send_waypoint_sequence_to_drone()
-          sendCommand("MISSION_UPLOAD", { mission: missionData });
-        } else {
-          // optional: keep a /api/missions save for drafts
-          try {
-            await fetch('http://localhost:4000/api/missions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(missionData)
-            });
-          } catch (err) {
-            console.error(err);
-            alert('⚠️ Error saving mission');
-          }
+      /*try {
+        // still optionally save to backend for logging (no more MISSION_UPLOAD)
+        try {
+          await fetch('http://localhost:4000/api/missions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(missionData)
+          });
+        } catch (err) {
+          console.error(err);
+          // don’t block simulation if saving fails
+        }
+
+        // FRONTEND SIMULATION instead of real upload
+        if (options.simulate || missionStatus === "dispatched") {
+          startSimulationFromMission(missionData);
         }
 
       } catch (err) {
         console.error(err);
         alert('⚠️ Error saving mission');
-      }
+      }*/
+      // FRONTEND SIMULATION instead of real upload
+        if (options.simulate || missionStatus === "dispatched") {
+          startSimulationFromMission(missionData);
+        }
     }
+
 
     const missionStatusInput = document.getElementById("missionStatus");
     const scheduleFields = document.getElementById("scheduleFields");
@@ -1774,23 +2124,63 @@
       }
     });
 
-    async function startFPV() {
+    // ======================= FPV OPEN / CLOSE =========================
+
+    async function openFPV() {
+      const fpv = document.getElementById("fpv");
       const video = document.getElementById("fpvVideo");
+      const toggleBtn = document.getElementById("toggleFPV");
 
-      const src = `${window.location.origin}/fpv/stream.m3u8`;
+      // start backend ffmpeg
+      //await fetch("/api/fpv/start", { method: "POST" });
 
+      // show window in a safe default position
+      fpv.style.display = "flex";
+      fpv.style.visibility = "visible";
+      fpv.style.top = "80px";
+      fpv.style.left = "80px";
+
+      // load HLS
+      const url = "/hls/stream.m3u8";
       if (Hls.isSupported()) {
-        const hls = new Hls();
-        hls.loadSource(src);
+        window.hls = new Hls();
+        hls.loadSource(url);
         hls.attachMedia(video);
       } else {
-        // Safari / iOS
-        video.src = src;
+        video.src = url;
       }
 
-      await video.play();
-      document.getElementById("fpv").style.display = "flex";
+      // change icon → pause
+      //toggleBtn.children[0].src = `<i data-lucide="pause"></i>`;
+      lucide.createIcons();
     }
+
+    async function closeFPV() {
+      const fpv = document.getElementById("fpv");
+      const video = document.getElementById("fpvVideo");
+      const toggleBtn = document.getElementById("toggleFPV");
+
+      // stop video
+      try { video.pause(); video.removeAttribute("src"); video.load(); } catch(e){}
+
+      // destroy hls
+      if (window.hls) {
+        try { window.hls.destroy(); } catch(e){}
+        window.hls = null;
+      }
+
+      // stop backend ffmpeg
+     // await fetch("/api/fpv/stop", { method: "POST" });
+
+      // hide FPV window
+      fpv.style.display = "none";
+
+      // restore play icon
+      //toggleBtn.innerHTML = `<i data-lucide="play"></i> FPV`;
+      lucide.createIcons();
+    }
+
+
 
     document.getElementById("closeFPV").onclick = () => {
       const video = document.getElementById("fpvVideo");
@@ -1841,6 +2231,15 @@
       sendCommand("GIMBAL_CENTER");
     };
 
+    document.getElementById("arm-disarm").onclick = () => {
+      arm_bool = !arm_bool
+      document.getElementsByClassName("plate")[0].classList.toggle("on")
+      if(arm_bool){
+        sendCommand("ARM");
+      }else{
+        sendCommand("DISARM");
+      }
+    };
     const wpList = document.getElementById("waypointList");
 
     function refreshWaypointList() {
@@ -1916,7 +2315,6 @@
       try {
         const res = await fetch("http://localhost:4000/api/mavlink-status");
         const data = await res.json();
-        console.log(data.connected);
         if (data.connected) {
           mavlinkStatusEl.textContent = "MAVLink: Connected";
           mavlinkStatusEl.classList.add("ok");
@@ -1936,48 +2334,84 @@
     setInterval(pollMavlinkStatus, 2000);
     pollMavlinkStatus();
 
+    function updateDroneOnMap(sysid, lat, lng) {
+      if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+        return;
+      }
+
+      const pos = L.latLng(lat, lng);
+
+      let marker = droneMarkers[sysid];
+      if (!marker) {
+        marker = L.marker(pos, { icon: droneIcon }).addTo(map);
+        droneMarkers[sysid] = marker;
+      } else {
+        marker.setLatLng(pos);
+      }
+
+      // trail / breadcrumb (short trail)
+      let trail = droneTrails[sysid];
+      if (!trail) {
+        trail = L.polyline([pos], {
+          color: "#00ff88",
+          weight: 2,
+          opacity: 0.8,
+        }).addTo(map);
+        droneTrails[sysid] = trail;
+      } else {
+        const pts = trail.getLatLngs();
+
+        // only add if drone moved enough (optional)
+        const last = pts[pts.length - 1];
+        if (!last || map.distance(last, pos) > 1.0) {
+          pts.push(pos);
+        }
+
+        // 🔥 FORCE SHORT TRAIL: keep only last 20 points
+        const MAX_TRAIL_POINTS = 20;
+        if (pts.length > MAX_TRAIL_POINTS) {
+          pts.splice(0, pts.length - MAX_TRAIL_POINTS);
+        }
+
+        trail.setLatLngs(pts);
+      }
+
+    }
+
+    // Center on selected drone
+    document.getElementById("centerOnAll").addEventListener("click", () => {
+      const selectedSysid = parseInt(teleDroneSelect.value || defaultSysid.toString(), 10);
+      const marker = droneMarkers[selectedSysid] || droneMarkers[defaultSysid];
+      if (marker) {
+        map.panTo(marker.getLatLng());
+      }
+    });
+    // ======================= DRAGGABLE FPV WINDOW =======================
+    (function enableFPVDrag() {
+      const fpv = document.getElementById("fpv");
+      const header = fpv.querySelector(".fpv-header");
+
+      let offsetX = 0, offsetY = 0, dragging = false;
+
+      header.style.cursor = "move";
+
+      header.addEventListener("mousedown", (e) => {
+        dragging = true;
+        offsetX = e.clientX - fpv.offsetLeft;
+        offsetY = e.clientY - fpv.offsetTop;
+        fpv.style.transition = "none";
+      });
+
+      document.addEventListener("mouseup", () => dragging = false);
+
+      document.addEventListener("mousemove", (e) => {
+        if (!dragging) return;
+        fpv.style.left = `${e.clientX - offsetX}px`;
+        fpv.style.top = `${e.clientY - offsetY}px`;
+      });
+    })();
+
   });
-
-  function updateDroneOnMap(sysid, lat, lng) {
-    if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
-      return;
-    }
-
-    const pos = L.latLng(lat, lng);
-    // --- Marker with image icon ---
-
-    let marker = droneMarkers[sysid];
-    if (!marker) {
-      marker = L.marker(pos, { icon: droneIcon }).addTo(map);
-      droneMarkers[sysid] = marker;
-    } else {
-      marker.setLatLng(pos);
-    }
-
-    // --- Trail / breadcrumb ---
-    /*let trail = droneTrails[sysid];
-    if (!trail) {
-      trail = L.polyline([pos], {
-        color: "#00ff88",
-        weight: 2,
-        opacity: 0.8,
-      }).addTo(map);
-      droneTrails[sysid] = trail;
-    } else {
-      const pts = trail.getLatLngs();
-      pts.push(pos);
-      if (pts.length > 500) pts.shift(); // keep it short
-      trail.setLatLngs(pts);
-    }*/
-  }
-
-  document.getElementById("centerOnAll").addEventListener("click", () => {
-  const selectedSysid = parseInt(teleDroneSelect.value || "0", 10);
-  const marker = droneMarkers[selectedSysid];
-  if (marker) {
-    map.panTo(marker.getLatLng());
-  }
-});
 
 </script>
 

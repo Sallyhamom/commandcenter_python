@@ -4,7 +4,6 @@ import base64
 import json
 import os
 import socket
-import struct
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Set, Tuple, Optional
@@ -14,30 +13,44 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 import websockets
 
+from pymavlink import mavutil
+from pymavlink.dialects.v20 import ardupilotmega as mavlink2
+
+# ------------------------
+# VIDEO / RTSP CONFIG
+# ------------------------
 RTSP_URL = "rtsp://192.168.144.26:8554/main.264"
 HLS_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "hls")
 HLS_PLAYLIST = os.path.join(HLS_OUTPUT_DIR, "stream.m3u8")
 
+# ------------------------
+# C2 / HTTP CONFIG
+# ------------------------
+HTTP_PORT = 4000  # HTTP + WebSocket
 
 # ------------------------
-# CONFIG
+# MAVLINK LINK (pymavlink, same as udp_test.py)
 # ------------------------
-HTTP_PORT = 4000               # HTTP + WebSocket
-UDP_LISTEN_PORT = 14550        # Where drone sends MAVLink2 (same as Node)
-UDP_LISTEN_HOST = "0.0.0.0"
-
-UDP_TARGET_HOST = "192.168.144.12"  # Drone/MK32E MAVLink IP
-UDP_TARGET_PORT = 19856             # Drone/MK32E MAVLink Port
+CUBE_IP = "192.168.144.12"
+CUBE_PORT = 19856
+MAV_CONN_STR = f"udpout:{CUBE_IP}:{CUBE_PORT}"
 
 # GCS identity in MAVLink
 GCS_SYS_ID = 255
 GCS_COMP_ID = 190
-MAV_CMD_REQUEST_MESSAGE = 512   # for testing
-GLOBAL_POSITION_INT_ID = 33     # for testing
 
-# MAVLink sequence (0–255)
-mav_seq = 0
-current_amr_pose = {}
+MAV_CMD_REQUEST_MESSAGE = 512
+GLOBAL_POSITION_INT_ID = 33
+MAV_CMD_COMPONENT_ARM_DISARM = 400
+
+# pymavlink master connection
+mav_master: Optional[mavutil.mavlink_connection] = None
+mavlink_lock = asyncio.Lock()
+
+# MAVLink link status
+last_mavlink_rx_ms: int = 0    # timestamp (ms) of last MAVLink packet
+mavlink_msg_count: int = 0     # total number of MAVLink packets seen
+MAVLINK_TIMEOUT_MS = 5000      # consider "disconnected" if no packet in 5s
 
 # ------------------------
 # GIMBAL STATE (deg)
@@ -50,10 +63,18 @@ GIMBAL_PITCH_MAX = 30.0    # slight up
 GIMBAL_YAW_MIN = -180.0
 GIMBAL_YAW_MAX = 180.0
 
-GIMBAL_COMP_ID = 1       # MAV_COMP_ID_GIMBAL; change to 1 to test via FC or 154
+GIMBAL_COMP_ID = 1       # MAV_COMP_ID_AUTOPILOT (FC); gimbal manager handled there
+MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW = 1000
+
+ffmpeg_proc = None
+current_amr_pose = {}
+
+# Latest ZED frame (optional cache)
+latest_zed_frame: Dict[str, Any] = {}
+
 
 # ------------------------
-# GLOBAL STATE
+# APP & STATIC
 # ------------------------
 app = FastAPI()
 
@@ -61,14 +82,11 @@ os.makedirs(HLS_OUTPUT_DIR, exist_ok=True)
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "mission-control-frontend")
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-app.mount("/fpv", StaticFiles(directory=HLS_OUTPUT_DIR), name="fpv")
 
-
-if os.path.isdir(FRONTEND_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+app.mount("/hls", StaticFiles(directory=HLS_OUTPUT_DIR), name="hls")
 
 # IP / port of the IPC on the AMR:
-IPC_WS_URL = "ws://10.72.65.193:8765"   # change to your AMR IPC IP
+IPC_WS_URL = "ws://192.168.12.165:8765"   # change to your AMR IPC IP
 
 # ---------- STATE ----------
 stations: Dict[str, Any] = {}
@@ -76,186 +94,35 @@ current_odom_text: str = "Waiting for odometry..."
 map_image_url: str = "/static/my_map.png"
 STATIONS_FILE = os.path.join(os.path.dirname(__file__), "stations.json")
 
-
-# connection from FastAPI → IPC (AMR)
 ipc_ws: Optional[websockets.WebSocketClientProtocol] = None
 ipc_lock = asyncio.Lock()
-
 
 missions: List[Dict[str, Any]] = []
 notifications: List[Dict[str, Any]] = []
 last_telemetry_by_sysid: Dict[int, Dict[str, Any]] = {}
-last_mavlink_addr_by_sysid: Dict[int, Tuple[str, int]] = {}
+last_mavlink_addr_by_sysid: Dict[int, Tuple[str, int]] = {}  # kept for compatibility, unused now
 
 uav_clients: Set[WebSocket] = set()
 amr_clients: Set[WebSocket] = set()
-udp_transport = None  # type: ignore
 
-# MAVLink link status
-last_mavlink_rx_ms: int = 0    # timestamp (ms) of last MAVLink packet
-mavlink_msg_count: int = 0     # total number of MAVLink packets seen
-MAVLINK_TIMEOUT_MS = 5000      # consider "disconnected" if no packet in 5s
-
-
-# ------------------------
-# TELEMETRY DECODER
-# ------------------------
-
+# TELEMETRY FILTERS
 valid_sysids_with_heartbeat: Set[int] = set()
-# MAVLink constants we care about
-MAVLINK_MSG_ID_HEARTBEAT = 0
-MAVLINK_MSG_ID_SYS_STATUS = 1
-MAVLINK_MSG_ID_ATTITUDE = 30
-MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
-MAVLINK_MSG_ID_MOUNT_ORIENTATION = 265
-MAVLINK_MSG_ID_GIMBAL_DEVICE_ATTITUDE_STATUS = 284
 
-MAV_MODE_FLAG_SAFETY_ARMED = 0x80  # from MAVLink spec
+# MAVLink constants we care about
+MAV_MODE_FLAG_SAFETY_ARMED = 0x80
+mav_reader_task_handle: Optional[asyncio.Task] = None
+gcs_keepalive_task_handle: Optional[asyncio.Task] = None
+ipc_connector_task_handle: Optional[asyncio.Task] = None
+
 
 
 def get_current_user(request: Request):
     return "admin"
 
 
-def _decode_and_update_telemetry(sysid: int,
-                                 compid: int,
-                                 seq: int,
-                                 msgid: int,
-                                 payload: bytes,
-                                 addr: Tuple[str, int],
-                                 received_at_ms: int) -> Dict[str, Any]:
-    """Decode some common fields and merge into last_telemetry_by_sysid[sysid]."""
-    t = last_telemetry_by_sysid.get(sysid, {
-        "sysid": sysid,
-        "compid": compid,
-    })
-    last_mavlink_addr_by_sysid[sysid] = addr
-    # always basic fields
-    t["compid"] = compid
-    t["seq"] = seq
-    t["msgid"] = msgid
-    t["from"] = {"address": addr[0], "port": addr[1]}
-    t["receivedAt"] = received_at_ms
-
-    # HEARTBEAT
-    if msgid == MAVLINK_MSG_ID_HEARTBEAT and len(payload) >= 9:
-        custom_mode = struct.unpack_from("<I", payload, 0)[0]
-        base_mode = payload[4]  # NOTE: for many firmwares: type(0), autopilot(1), base_mode(2)? -> layout can differ
-        system_status = payload[5]
-
-        t["customMode"] = custom_mode
-        t["baseMode"] = base_mode
-        t["systemStatus"] = system_status
-        t["armed"] = bool(base_mode & MAV_MODE_FLAG_SAFETY_ARMED)
-
-        # this sysid is now trusted
-        valid_sysids_with_heartbeat.add(sysid)
-
-    # SYS_STATUS – battery
-    elif msgid == MAVLINK_MSG_ID_SYS_STATUS and len(payload) >= 31:
-        (
-            onboard_present,
-            onboard_enabled,
-            onboard_health,
-            load,
-            voltage_battery,
-            current_battery,
-            battery_remaining,
-            drop_rate_comm,
-            errors_comm,
-            errors_count1,
-            errors_count2,
-            errors_count3,
-            errors_count4,
-        ) = struct.unpack_from("<IIIHHhBHHHHHH", payload, 0)
-
-        t["batteryVoltage"] = (
-            voltage_battery / 1000.0 if voltage_battery != 0xFFFF else None
-        )
-        t["batteryRemaining"] = (
-            battery_remaining if battery_remaining != 255 else None
-        )
-        t["load"] = load / 10.0
-
-    # ATTITUDE
-    elif msgid == MAVLINK_MSG_ID_ATTITUDE and len(payload) >= 28:
-        time_boot_ms, roll, pitch, yaw, rollspeed, pitchspeed, yawspeed = \
-            struct.unpack_from("<Iffffff", payload, 0)
-        t["attitude"] = {
-            "roll": roll,
-            "pitch": pitch,
-            "yaw": yaw,
-            "rollspeed": rollspeed,
-            "pitchspeed": pitchspeed,
-            "yawspeed": yawspeed,
-        }
-
-    # GLOBAL_POSITION_INT
-    elif msgid == MAVLINK_MSG_ID_GLOBAL_POSITION_INT and len(payload) >= 28:
-        time_boot_ms, lat, lon, alt, rel_alt, vx, vy, vz, hdg = \
-            struct.unpack_from("<IiiiihhhH", payload, 0)
-        t["position"] = {
-            "lat": lat / 1e7,
-            "lng": lon / 1e7,
-            "alt": alt / 1000.0,
-            "relAlt": rel_alt / 1000.0,
-            "vx": vx / 100.0,
-            "vy": vy / 100.0,
-            "vz": vz / 100.0,
-            "heading": None if hdg == 0xFFFF else hdg / 100.0,
-        }
-
-    elif msgid == MAVLINK_MSG_ID_MOUNT_ORIENTATION and len(payload) >= 12:
-        pitch, roll, yaw = struct.unpack_from("<fff", payload, 0)
-        t["gimbal"] = {
-            "pitchDeg": pitch,
-            "rollDeg": roll,
-            "yawDeg": yaw,
-        }
-
-    elif msgid == MAVLINK_MSG_ID_GIMBAL_DEVICE_ATTITUDE_STATUS and len(payload) >= 48:
-        # decode quaternion q = [w, x, y, z]
-        q0, q1, q2, q3 = struct.unpack_from("<ffff", payload, 0)
-
-        # convert quaternion → Euler
-        import math
-        # Yaw-Pitch-Roll convention — adjust if needed
-        ysqr = q2 * q2
-
-        t0 = +2.0 * (q0 * q1 + q2 * q3)
-        t1 = +1.0 - 2.0 * (q1 * q1 + ysqr)
-        roll = math.degrees(math.atan2(t0, t1))
-
-        t2 = +2.0 * (q0 * q2 - q3 * q1)
-        t2 = +1.0 if t2 > +1.0 else t2
-        t2 = -1.0 if t2 < -1.0 else t2
-        pitch = math.degrees(math.asin(t2))
-
-        t3 = +2.0 * (q0 * q3 + q1 * q2)
-        t4 = +1.0 - 2.0 * (ysqr + q3 * q3)
-        yaw = math.degrees(math.atan2(t3, t4))
-
-        t["gimbal"] = {
-            "rollDeg": roll,
-            "pitchDeg": pitch,
-            "yawDeg": yaw,
-        }
-
-    if msgid in (265, 284):
-        print("🎯 Gimbal telemetry msgid", msgid, "sysid", sysid)
-
-    # only keep telemetry for sysids that have sent heartbeat (or are sending one now)
-    if sysid in valid_sysids_with_heartbeat or msgid == MAVLINK_MSG_ID_HEARTBEAT:
-        last_telemetry_by_sysid[sysid] = t
-
-    return t
-
-
 # ------------------------
-# UTIL: SERVER IP DISCOVERY
+# SERVER IP DISCOVERY
 # ------------------------
-
-
 def get_server_ip() -> str:
     candidates = []
 
@@ -279,104 +146,212 @@ def get_server_ip() -> str:
 
 
 # ------------------------
-# CRC-X25 (MAVLink)
+# MAVLINK CONNECT (BLOCKING) - SAME PATTERN AS udp_test.py
 # ------------------------
-def crc_accumulate(byte: int, crc: int) -> int:
-    tmp = byte ^ (crc & 0xFF)
-    tmp ^= (tmp << 4) & 0xFF
-    new_crc = ((crc >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4)) & 0xFFFF
-    return new_crc
+def init_mavlink():
+    """
+    Non-blocking MAVLink init.
+    We just create the connection and send one heartbeat.
+    The reader task will wait for and print the first HEARTBEAT.
+    """
+    global mav_master
+
+    if mav_master is not None:
+        return
+
+    print(f"[MAV] Connecting to {MAV_CONN_STR} ...")
+    master = mavutil.mavlink_connection(MAV_CONN_STR, source_system=GCS_SYS_ID)
+
+    # Kick UDP socket (Windows + udpout quirk)
+    print("[MAV] Sending initial heartbeat to open UDP socket...")
+    master.mav.heartbeat_send(0, 0, 0, 0, 0)
+
+    mav_master = master
+    print("[MAV] MAVLink connection handle created; waiting for HEARTBEAT in reader task...")
 
 
-def mav_crc_x25(buf: bytes, crc_extra: int) -> int:
-    crc = 0xFFFF
-    for b in buf:
-        crc = crc_accumulate(b, crc)
-    crc = crc_accumulate(crc_extra, crc)
-    return crc
-
-
-def build_command_long_packet(target_sysid: int, target_compid: int, command: int, params):
-
-    global mav_seq
-
-    msg_id = 76         # COMMAND_LONG
-    crc_extra = 152     # CRC extra for COMMAND_LONG
-    payload_len = 33    # 7*4 + 2 + 1 + 1 + 1
+# ------------------------
+# COMMAND_LONG (PYMAVLINK)
+# ------------------------
+def send_command_long_pymav(target_sysid: int, target_compid: int, command: int, params):
+    global mav_master
+    if mav_master is None:
+        print("❌ MAVLink master not ready, cannot send COMMAND_LONG")
+        return
 
     if params is None:
         params = [0.0] * 7
     if len(params) < 7:
         params = list(params) + [0.0] * (7 - len(params))
 
-    payload = bytearray(payload_len)
-
-    # 7 floats param1..param7
-    import struct
-    for i in range(7):
-        struct.pack_into("<f", payload, i * 4, float(params[i]))
-
-    # command (uint16)
-    struct.pack_into("<H", payload, 28, command)
-
-    # target_system, target_component, confirmation
-    payload[30] = target_sysid & 0xFF
-    payload[31] = target_compid & 0xFF
-    payload[32] = 0  # confirmation
-
-    # Header
-    seq = mav_seq & 0xFF
-    mav_seq = (mav_seq + 1) & 0xFF
-
-    frame = bytearray(10 + payload_len + 2)
-    o = 0
-    frame[o] = 0xFD; o += 1         # magic
-    frame[o] = payload_len; o += 1  # length
-    frame[o] = 0x00; o += 1         # incompat_flags
-    frame[o] = 0x00; o += 1         # compat_flags
-    frame[o] = seq; o += 1          # seq
-    frame[o] = GCS_SYS_ID; o += 1   # sysid (GCS)
-    frame[o] = GCS_COMP_ID; o += 1  # compid (GCS)
-    # msgid (3 bytes, little endian)
-    frame[o] = msg_id & 0xFF; o += 1
-    frame[o] = (msg_id >> 8) & 0xFF; o += 1
-    frame[o] = (msg_id >> 16) & 0xFF; o += 1
-
-    # payload
-    frame[o:o+payload_len] = payload
-    o += payload_len
-
-    # CRC over payload + msgid bytes
-    crc_input = bytes(payload) + bytes([msg_id & 0xFF, (msg_id >> 8) & 0xFF, (msg_id >> 16) & 0xFF])
-    crc = mav_crc_x25(crc_input, crc_extra)
-    frame[o] = crc & 0xFF
-    frame[o+1] = (crc >> 8) & 0xFF
-
-    return bytes(frame)
+    try:
+        mav_master.mav.command_long_send(
+            target_sysid,
+            target_compid,
+            command,
+            0,  # confirmation
+            float(params[0]),
+            float(params[1]),
+            float(params[2]),
+            float(params[3]),
+            float(params[4]),
+            float(params[5]),
+            float(params[6]),
+        )
+    except Exception as e:
+        print("Error sending COMMAND_LONG via pymavlink:", e)
 
 
-def request_gimbal_msgs(sysid):
-    # Request MOUNT_ORIENTATION
-    send_command_long(sysid, GIMBAL_COMP_ID, MAV_CMD_REQUEST_MESSAGE, [265, 1, 0, 0, 0, 0, 0])
-    # Request GIMBAL_DEVICE_ATTITUDE_STATUS
-    send_command_long(sysid, GIMBAL_COMP_ID, MAV_CMD_REQUEST_MESSAGE, [284, 1, 0, 0, 0, 0, 0])
+# ------------------------
+# MAVLINK READER TASK (TELEMETRY)
+# ------------------------
+async def mavlink_reader_task():
+    """
+    Background task: read MAVLink using pymavlink and update telemetry + broadcast.
+    Uses run_in_executor so we don't block the asyncio loop.
+    """
+    global mav_master, last_mavlink_rx_ms, mavlink_msg_count
+
+    print("[MAV] Reader task started")
+    loop = asyncio.get_running_loop()
+
+    while True:
+        if mav_master is None:
+            await asyncio.sleep(1.0)
+            continue
+
+        try:
+            # Offload the blocking recv_match to a thread
+            msg = await loop.run_in_executor(
+                None,
+                lambda: mav_master.recv_match(blocking=True, timeout=1)
+            )
+        except asyncio.CancelledError:
+            print("[MAV] Reader task cancelled")
+            break
+        except Exception as e:
+            print("[MAV] recv error:", e)
+            await asyncio.sleep(1.0)
+            continue
+
+        if msg is None:
+            continue
+
+        now_ms = int(time.time() * 1000)
+        last_mavlink_rx_ms = now_ms
+        mavlink_msg_count += 1
+
+        mtype = msg.get_type()
+        sysid = msg.get_srcSystem()
+        compid = msg.get_srcComponent()
+
+        # --- DEBUG PRINTS, like your udp_test.py ---
+        if mtype == "GLOBAL_POSITION_INT":
+            lat = msg.lat / 1e7
+            lon = msg.lon / 1e7
+            alt = msg.alt / 1000.0
+            # print(f"[GPS] lat={lat:.7f}, lon={lon:.7f}, alt={alt:.1f}m")
+        elif mtype == "SYS_STATUS":
+            v = msg.voltage_battery / 1000.0
+            # print(f"[BAT] {v:.2f} V (remaining={msg.battery_remaining}%)")
+
+        # --- Build telemetry dict for UI ---
+        t = last_telemetry_by_sysid.get(sysid, {
+            "sysid": sysid,
+            "compid": compid,
+        })
+        t["compid"] = compid
+        t["msgType"] = mtype
+        t["receivedAt"] = now_ms
+
+        if mtype == "HEARTBEAT":
+            t["customMode"] = msg.custom_mode
+            t["baseMode"] = msg.base_mode
+            t["systemStatus"] = msg.system_status
+            t["armed"] = bool(msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED)
+            valid_sysids_with_heartbeat.add(sysid)
+
+        elif mtype == "SYS_STATUS":
+            v_batt = msg.voltage_battery
+            batt_rem = msg.battery_remaining
+            t["batteryVoltage"] = (v_batt / 1000.0 if v_batt != 65535 else None)
+            t["batteryRemaining"] = (batt_rem if batt_rem != 255 else None)
+            t["load"] = msg.load / 10.0
+
+        elif mtype == "ATTITUDE":
+            t["attitude"] = {
+                "roll": msg.roll,
+                "pitch": msg.pitch,
+                "yaw": msg.yaw,
+                "rollspeed": msg.rollspeed,
+                "pitchspeed": msg.pitchspeed,
+                "yawspeed": msg.yawspeed,
+            }
+
+        elif mtype == "GLOBAL_POSITION_INT":
+            t["position"] = {
+                "lat": msg.lat / 1e7,
+                "lng": msg.lon / 1e7,
+                "alt": msg.alt / 1000.0,
+                "relAlt": msg.relative_alt / 1000.0,
+                "vx": msg.vx / 100.0,
+                "vy": msg.vy / 100.0,
+                "vz": msg.vz / 100.0,
+                "heading": None if msg.hdg == 65535 else msg.hdg / 100.0,
+            }
+
+        elif mtype == "MOUNT_ORIENTATION":
+            t["gimbal"] = {
+                "pitchDeg": msg.pitch,
+                "rollDeg": msg.roll,
+                "yawDeg": msg.yaw,
+            }
+            print("🎯 Gimbal telemetry MOUNT_ORIENTATION sysid", sysid)
+
+        # Only keep telemetry for sysids that have sent heartbeat (or are sending one now)
+        if sysid in valid_sysids_with_heartbeat or mtype == "HEARTBEAT":
+            last_telemetry_by_sysid[sysid] = t
+
+        # Broadcast to WS clients
+        if sysid in valid_sysids_with_heartbeat and uav_clients:
+            await broadcast_uav({
+                "type": "telemetry",
+                **t,
+            })
 
 
-def send_command_long(target_sysid: int, target_compid: int, command: int, params):
-    if udp_transport is None:
-        print("❌ UDP transport not ready, cannot send command")
-        return
+# ------------------------
+# KEEPALIVE TASK
+# ------------------------
+async def gcs_keepalive_task():
+    """Periodically poke the drone so it keeps sending us MAVLink."""
+    await asyncio.sleep(5.0)  # wait for startup
+    while True:
+        try:
+            if mav_master is None:
+                await asyncio.sleep(1.0)
+                continue
 
-    pkt = build_command_long_packet(target_sysid, target_compid, command, params)
-#    udp_transport.sendto(pkt, (UDP_TARGET_HOST, UDP_TARGET_PORT))
-    addr = last_mavlink_addr_by_sysid.get(target_sysid)
-    if addr is None:
-        addr = (UDP_TARGET_HOST, UDP_TARGET_PORT)  # fallback
+            # pick a sysid, same logic as /api/test-mavlink
+            if valid_sysids_with_heartbeat:
+                target_sysid = sorted(valid_sysids_with_heartbeat)[0]
+            else:
+                target_sysid = mav_master.target_system or 1
 
-    udp_transport.sendto(pkt, addr)
-    print(f"➡ Sent COMMAND_LONG id={command} to {addr[0]}:{addr[1]} sys={target_sysid} comp={target_compid}")
-#    print(f"➡ Sent COMMAND_LONG id={command} to {UDP_TARGET_HOST}:{UDP_TARGET_PORT} "
-#          f"sys={target_sysid} comp={target_compid}")
+            target_compid = mav_master.target_component or 1
+            params = [float(GLOBAL_POSITION_INT_ID), 1.0, 0, 0, 0, 0, 0]
+
+            mav_master.mav.command_long_send(
+                target_sysid,
+                target_compid,
+                MAV_CMD_REQUEST_MESSAGE,
+                0,
+                *params
+            )
+        except Exception as e:
+            print("Keepalive error:", e)
+
+        await asyncio.sleep(2.0)  # every 2 seconds
 
 
 # ------------------------
@@ -411,79 +386,8 @@ async def broadcast_amr(obj: Dict[str, Any]) -> None:
 
 
 # ------------------------
-# UDP MAVLINK2 LISTENER
-# ------------------------
-class MavlinkUDPProtocol(asyncio.DatagramProtocol):
-    def datagram_received(self, data: bytes, addr: Tuple[str, int]) -> None:
-        global last_mavlink_rx_ms, mavlink_msg_count
-
-        last_mavlink_rx_ms = int(time.time() * 1000)
-        mavlink_msg_count += 1
-
-        if not data or len(data) < 8:
-            return
-
-        stx = data[0]
-        if stx not in (0xFD, 0xFE):
-            # not a MAVLink frame
-            # print(f"⚠️ Not MAVLink: stx=0x{stx:02X}")
-            return
-
-        try:
-            payload_len = data[1]
-
-            if stx == 0xFD:
-                # MAVLink2
-                if len(data) < 10 + payload_len:
-                    return
-                seq = data[4]
-                sysid = data[5]
-                compid = data[6]
-                msgid = data[7] | (data[8] << 8) | (data[9] << 16)
-                payload_start = 10
-
-            else:
-                # MAVLink1 (0xFE)
-                if len(data) < 6 + payload_len:
-                    return
-                seq = data[2]
-                sysid = data[3]
-                compid = data[4]
-                msgid = data[5]
-                payload_start = 6
-
-            payload_end = payload_start + payload_len
-            payload = data[payload_start:payload_end]
-
-            tel = _decode_and_update_telemetry(
-                sysid=sysid,
-                compid=compid,
-                seq=seq,
-                msgid=msgid,
-                payload=payload,
-                addr=addr,
-                received_at_ms=last_mavlink_rx_ms,
-            )
-
-            # only broadcast for sysids we trust (with heartbeat)
-            if sysid in valid_sysids_with_heartbeat and uav_clients:
-                loop = asyncio.get_event_loop()
-                loop.create_task(
-                    broadcast_uav({
-                        "type": "telemetry",
-                        **tel,
-                    })
-                )
-
-        except Exception as e:
-            print("Error parsing MAVLink packet:", e)
-
-
-# ------------------------
 # COMMAND HANDLER (from UI)
 # ------------------------
-
-
 def handle_command_from_ui(message: Dict[str, Any]) -> None:
     global gimbal_pitch_deg, gimbal_yaw_deg
 
@@ -494,7 +398,7 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
     target_sys_id = sysid or mission.get("droneSysId") or 1
     target_comp_id = 1  # autopilot
 
-    print(f"📨 UI Command: {cmd} → sysid={target_sys_id} extra={message}")
+    print(f"UI Command: {cmd} → sysid={target_sys_id} extra={message}")
 
     MAV_CMD_DO_DIGICAM_CONTROL = 203
     MAV_CMD_VIDEO_START_CAPTURE = 250
@@ -504,31 +408,30 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
 
     if cmd == "TAKE_PHOTO":
         params = [0, 0, 0, 0, 1, 0, 0]
-        send_command_long(target_sys_id, target_comp_id, MAV_CMD_DO_DIGICAM_CONTROL, params)
+        send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_DO_DIGICAM_CONTROL, params)
 
     elif cmd == "REC_START":
         params = [0, 1, 0, 0, 0, 0, 0]
-        send_command_long(target_sys_id, target_comp_id, MAV_CMD_VIDEO_START_CAPTURE, params)
+        send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_VIDEO_START_CAPTURE, params)
 
     elif cmd == "REC_STOP":
         params = [0, 1, 0, 0, 0, 0, 0]
-        send_command_long(target_sys_id, target_comp_id, MAV_CMD_VIDEO_STOP_CAPTURE, params)
+        send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_VIDEO_STOP_CAPTURE, params)
 
     elif cmd == "ZOOM_IN":
-        params = [0, 1, 0, 0, 0, 0, 0]
-        send_command_long(target_sys_id, target_comp_id, MAV_CMD_SET_CAMERA_ZOOM, params)
+        params = [1, 0.05, 0, 0, 0, 0, 0]
+        send_command_long_pymav(target_sys_id, 1, MAV_CMD_SET_CAMERA_ZOOM, params)
 
     elif cmd == "ZOOM_OUT":
-        params = [0, -1, 0, 0, 0, 0, 0]
-        send_command_long(target_sys_id, target_comp_id, MAV_CMD_SET_CAMERA_ZOOM, params)
+        params = [1, -0.05, 0, 0, 0, 0, 0]
+        send_command_long_pymav(target_sys_id, 1, MAV_CMD_SET_CAMERA_ZOOM, params)
 
     elif cmd in ("GIMBAL_UP", "GIMBAL_DOWN", "GIMBAL_LEFT", "GIMBAL_RIGHT", "GIMBAL_CENTER"):
-        step = 5.0
-
+        step = 5.0  # degrees per click
         if cmd == "GIMBAL_UP":
-            gimbal_pitch_deg += step
+            gimbal_pitch_deg += step + 5
         elif cmd == "GIMBAL_DOWN":
-            gimbal_pitch_deg -= step
+            gimbal_pitch_deg -= step - 5
         elif cmd == "GIMBAL_LEFT":
             gimbal_yaw_deg -= step
         elif cmd == "GIMBAL_RIGHT":
@@ -540,45 +443,40 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
         gimbal_pitch_deg = max(GIMBAL_PITCH_MIN, min(GIMBAL_PITCH_MAX, gimbal_pitch_deg))
         gimbal_yaw_deg = max(GIMBAL_YAW_MIN, min(GIMBAL_YAW_MAX, gimbal_yaw_deg))
 
-        params = [
-            gimbal_pitch_deg,  # pitch
-            0.0,               # roll
-            gimbal_yaw_deg,    # yaw
-            0.0,
-            0.0,
-            0.0,
-            2.0,               # MAV_MOUNT_MODE_MAVLINK_TARGETING
+        # --- 1) Classic DO_MOUNT_CONTROL style (many ArduPilot setups) ---
+        mount_params = [
+            gimbal_pitch_deg,  # param1: pitch (deg)
+            0.0,               # param2: roll
+            gimbal_yaw_deg,    # param3: yaw (deg)
+            0.0, 0.0, 0.0,
+            2.0,               # param7: MAV_MOUNT_MODE_MAVLINK_TARGETING
         ]
-        send_command_long(target_sys_id, GIMBAL_COMP_ID, MAV_CMD_DO_MOUNT_CONTROL, params)
+        send_command_long_pymav(target_sys_id, 1, MAV_CMD_DO_MOUNT_CONTROL, mount_params)
+
+        # --- 2) New Gimbal Manager style (MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW) ---
+        gm_params = [
+            gimbal_pitch_deg,  # param1: pitch (deg)
+            gimbal_yaw_deg,    # param2: yaw (deg)
+            0.0,               # param3: pitch_rate (deg/s)
+            0.0,               # param4: yaw_rate (deg/s)
+            0.0,               # param5: flags (0 = body frame)
+            0.0,               # param6: reserved
+            0.0,               # param7: gimbal instance id (0 for only gimbal)
+        ]
+        send_command_long_pymav(target_sys_id, 1, MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, gm_params)
+
+        print(
+            f"📨 Sent gimbal cmd={cmd} pitch={gimbal_pitch_deg:.1f} "
+            f"yaw={gimbal_yaw_deg:.1f} to sysid={target_sys_id}"
+        )
 
     elif cmd in ("FPV_START", "FPV_STOP"):
         print(f"(No MAVLink sent for {cmd} — handled by video pipeline)")
 
     elif cmd == "MISSION_UPLOAD":
-        print("🛰 Mission upload received:", mission)
-        # Extract waypoints from mission sent by the UI
-        waypoints = mission.get("waypoints") or []
-        if not waypoints:
-
-            print("⚠️ No waypoints in mission, nothing to send")
-
-        else:
-
-            target = sysid or mission.get("droneSysId") or 1
-            loc = mission.get("location") or {}
-            default_alt = float(loc.get("alt", 50.0))
-
-            # Optional: hold 0 seconds at each waypoint
-
-            send_waypoint_sequence_to_drone(
-                waypoints=waypoints,
-                default_alt=default_alt,
-                target_sysid=int(target),
-                hold_time=0.0,
-            )
-
-        # still notify UI that we "sent" the mission
-
+        print("🛰 Mission upload requested (still using C2-side simulation):", mission)
+        # For now we keep this as C2-only "logical mission"; no real mission upload over RC
+        # You can keep or extend your existing send_waypoint_sequence_to_drone if you want to simulate
         try:
             loop = asyncio.get_event_loop()
             loop.create_task(
@@ -590,69 +488,108 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
             )
 
         except RuntimeError:
-
-            # fallback if no running loop (shouldn't happen inside FastAPI)
             asyncio.create_task(
                 broadcast_uav({
                     "type": "mission_ack",
                     "status": "sent",
                     "missionName": mission.get("missionName", "Untitled"),
                 })
-
             )
+    elif cmd == "ARM":
+        params = [1, 0, 0, 0, 0, 0, 0]  # arm
+        send_command_long_pymav(
+            target_sys_id,
+            1,
+            MAV_CMD_COMPONENT_ARM_DISARM,  # MAV_CMD_COMPONENT_ARM_DISARM
+            params
+        )
+        # send_command_long_pymav(target_sys_id, 1, MAV_CMD_COMPONENT_ARM_DISARM, params)
+
+    elif cmd == "DISARM":
+        params = [0, 0, 0, 0, 0, 0, 0]
+        send_command_long_pymav(
+            target_sys_id,
+            1,
+            MAV_CMD_COMPONENT_ARM_DISARM,  # MAV_CMD_COMPONENT_ARM_DISARM
+            params
+        )
 
     else:
         print("Unknown command from UI:", cmd)
 
 
-def send_waypoint_sequence_to_drone(
-    waypoints: List[Dict[str, Any]],
-    default_alt: float,
-    target_sysid: int,
-    hold_time: float = 0.0,
-) -> None:
+def arm_disarm(master, target_sysid: Optional[int] = None, arm: bool = True, timeout_s: float = 5.0):
+    """
+    Send MAV_CMD_COMPONENT_ARM_DISARM to target_sysid (or choose a default).
+    Blocks waiting for COMMAND_ACK (up to timeout_s).
+    Returns a dict {ok: bool, result: int, text: str}
+    """
+    global mav_master, valid_sysids_with_heartbeat, last_telemetry_by_sysid
 
-    MAV_CMD_NAV_WAYPOINT = 16
-    target_comp_id = 1  # autopilot
+    if master is None:
+        return {"ok": False, "error": "MAVLink master not ready"}
 
-    if udp_transport is None:
-        print("❌ UDP transport not ready, cannot send waypoints")
-        return
+    # pick a target sysid if not provided
+    if target_sysid is None:
+        if valid_sysids_with_heartbeat:
+            target_sysid = sorted(valid_sysids_with_heartbeat)[0]
+        elif last_telemetry_by_sysid:
+            target_sysid = sorted(last_telemetry_by_sysid.keys())[0]
+        else:
+            target_sysid = master.target_system or 1
 
-    for idx, wp in enumerate(waypoints):
-        # support both {lat,lng} and {lat,lon}
-        lat = wp.get("lat") or wp.get("latitude")
-        lon = wp.get("lng") or wp.get("lon") or wp.get("longitude")
-        alt = wp.get("alt", default_alt)
+    target_compid = master.target_component or 1
 
-        if lat is None or lon is None:
-            print(f"⚠️ Waypoint {idx} missing lat/lon, skipping:", wp)
+    # command id for arm/disarm
+    CMD = mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM
+    param1 = 1.0 if arm else 0.0
+
+    try:
+        # send COMMAND_LONG
+        master.mav.command_long_send(
+            target_sysid,
+            target_compid,
+            CMD,
+            0,              # confirmation
+            float(param1), # param1: 1=arm, 0=disarm
+            0,0,0,0,0,0
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"send failed: {e}"}
+
+    # wait for COMMAND_ACK for this command
+    start = time.time()
+    while time.time() - start < timeout_s:
+        try:
+            ack = master.recv_match(type='COMMAND_ACK', blocking=True, timeout=1)
+        except Exception as e:
+            # recv error — continue trying until timeout
+            ack = None
+
+        if ack is None:
             continue
 
-        params = [
-            float(hold_time),  # param1: hold time (seconds)
-            0.0,               # param2: unused
-            0.0,               # param3: unused
-            0.0,               # param4: yaw (0 = unchanged)
-            float(lat),        # param5: target lat (deg)
-            float(lon),        # param6: target lon (deg)
-            float(alt),        # param7: target alt (m)
-        ]
+        # Some implementations return .command (uint16) and .result (uint8)
+        # ack.command may be the numeric command id
+        try:
+            if int(getattr(ack, "command", -1)) == int(CMD):
+                result = int(getattr(ack, "result", -1))
+                # map result codes to human text (common ones)
+                result_map = {
+                    0: "ACCEPTED",
+                    1: "TEMPORARILY_REJECTED",
+                    2: "DENIED",
+                    3: "UNSUPPORTED",
+                    4: "FAILED",
+                    5: "IN_PROGRESS",
+                }
+                text = result_map.get(result, f"RESULT_{result}")
+                return {"ok": result == 0, "result": result, "text": text}
+        except Exception:
+            # not the ack we want; continue waiting
+            continue
 
-        print(
-            f"➡ Sending WP#{idx} "
-            f"lat={lat:.7f} lon={lon:.7f} alt={alt:.1f} "
-            f"to sysid={target_sysid}"
-        )
-        send_command_long(
-            target_sysid=target_sysid,
-            target_compid=target_comp_id,
-            command=MAV_CMD_NAV_WAYPOINT,
-            params=params,
-        )
-
-        # Small delay so we don't spam FC too fast
-        time.sleep(0.2)
+    return {"ok": False, "error": "timeout waiting for COMMAND_ACK"}
 
 
 # ----------ROS HELPERS ----------
@@ -710,8 +647,8 @@ async def server_ip():
 async def health():
     return {
         "ok": True,
-        "mode": "udp+ws",
-        "udpListen": f"{UDP_LISTEN_HOST}:{UDP_LISTEN_PORT}",
+        "mode": "udp+pymavlink+ws",
+        "mavConn": MAV_CONN_STR,
     }
 
 
@@ -751,9 +688,17 @@ async def test_mavlink(sysid: Optional[int] = None):
     """
     Fire a harmless MAVLink COMMAND_LONG (REQUEST_MESSAGE for GLOBAL_POSITION_INT)
     so we can check that:
-      - UDP transport works
+      - MAVLink transport works
       - Drone responds with telemetry
     """
+    global mav_master
+
+    if mav_master is None:
+        return JSONResponse(
+            {"ok": False, "error": "MAVLink master not ready"},
+            status_code=500,
+        )
+
     # 1) Choose target sysid
     if sysid is None:
         # Prefer a sysid that has sent HEARTBEAT
@@ -762,37 +707,26 @@ async def test_mavlink(sysid: Optional[int] = None):
         elif last_telemetry_by_sysid:
             target_sysid = sorted(last_telemetry_by_sysid.keys())[0]
         else:
-            target_sysid = 1  # fallback
+            target_sysid = mav_master.target_system or 1
     else:
         target_sysid = sysid
 
-    target_compid = 1  # autopilot
-
-    # 2) Check UDP is ready
-    if udp_transport is None:
-        return JSONResponse(
-            {
-                "ok": False,
-                "error": "UDP transport not ready (no MAVLink socket). "
-                         "Check startup logs and UDP_LISTEN_HOST/PORT.",
-            },
-            status_code=500,
-        )
+    target_compid = mav_master.target_component or 1
 
     # 3) Build params for MAV_CMD_REQUEST_MESSAGE
-    # param1 = message ID to request (GLOBAL_POSITION_INT = 33)
     params = [
         float(GLOBAL_POSITION_INT_ID),  # param1: message id
         1.0,                            # param2: request ON (1) or OFF (0)
-        0.0, 0.0, 0.0, 0.0, 0.0         # remaining unused
+        0.0, 0.0, 0.0, 0.0, 0.0
     ]
 
     # 4) Send the command
-    send_command_long(
+    mav_master.mav.command_long_send(
         target_sysid,
         target_compid,
         MAV_CMD_REQUEST_MESSAGE,
-        params,
+        0,
+        *params
     )
     print(
         f"➡ TEST: sent MAV_CMD_REQUEST_MESSAGE ({GLOBAL_POSITION_INT_ID}) "
@@ -812,25 +746,18 @@ async def test_mavlink(sysid: Optional[int] = None):
 async def test_gimbal_nudge(sysid: Optional[int] = None):
     """
     Simple HTTP test to nudge the gimbal DOWN once.
-    Usage:
-      POST /api/test-gimbal-nudge          -> uses first heartbeat sysid or 1
-      POST /api/test-gimbal-nudge?sysid=5  -> forces sysid 5
     """
-    # --- pick a target sysid ---
     if sysid is not None:
         try:
             target_sys_id = int(sysid)
         except (TypeError, ValueError):
             target_sys_id = 1
     else:
-        # If we already have heartbeats, pick the first one,
-        # otherwise fall back to 1
         if valid_sysids_with_heartbeat:
             target_sys_id = sorted(valid_sysids_with_heartbeat)[0]
         else:
             target_sys_id = 1
 
-    # --- call the same logic as the UI buttons ---
     handle_command_from_ui({
         "cmd": "GIMBAL_DOWN",
         "sysid": target_sys_id,
@@ -854,7 +781,7 @@ async def amr_stations_page(request: Request, user: str = Depends(get_current_us
 
 
 @app.get("/uav-cc", response_class=HTMLResponse)
-async def amr_stations_page(request: Request, user: str = Depends(get_current_user)):
+async def uav_cc_page(request: Request, user: str = Depends(get_current_user)):
     return FileResponse(os.path.join(FRONTEND_DIR, "commandcenter.html"))
 
 
@@ -872,7 +799,6 @@ async def list_drones():
     return {"ok": True, "drones": drones}
 
 
-# Serve main HTML (same as Node's login.html)
 @app.get("/login")
 async def root():
     if os.path.isdir(FRONTEND_DIR):
@@ -892,7 +818,6 @@ async def mavlink_status():
         "connected": connected,
         "lastMessageAgeMs": age_ms,
         "totalMessages": mavlink_msg_count,
-        # only sysids that have actually sent HEARTBEAT
         "sysids": sorted(valid_sysids_with_heartbeat),
     }
 
@@ -904,8 +829,101 @@ async def get_amr_pose():
     return {"ok": True, "pose": current_amr_pose}
 
 
+@app.post("/api/fpv/start")
+async def fpv_start():
+    global ffmpeg_proc
+
+    # If already running → OK, return success
+    if ffmpeg_proc and ffmpeg_proc.poll() is None:
+        return {"ok": True, "status": "already_running"}
+
+    ff_cmd = [
+        "ffmpeg",
+        "-rtsp_transport", "tcp",
+        "-i", RTSP_URL,
+        "-c:v", "copy",
+        "-an",
+        "-f", "hls",
+        "-hls_time", "1",
+        "-hls_list_size", "5",
+        "-hls_flags", "delete_segments",
+        os.path.join(HLS_OUTPUT_DIR, "stream.m3u8"),
+    ]
+
+    try:
+        ffmpeg_proc = subprocess.Popen(
+            ff_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+        print("🎥 FPV started, PID:", ffmpeg_proc.pid)
+        return ffmpeg_proc
+        # return {"ok": True}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/fpv/stop")
+async def fpv_stop():
+    global ffmpeg_proc
+    if not ffmpeg_proc:
+        return {"ok": True, "status": "not_running"}
+
+    # If process already exited
+    if ffmpeg_proc.poll() is not None:
+        ffmpeg_proc = None
+        return {"ok": True, "status": "not_running"}
+
+    try:
+        # Try graceful stop first
+        if os.name != "nt":
+            # send SIGTERM to the whole process group
+            os.killpg(os.getpgid(ffmpeg_proc.pid), signal.SIGTERM)
+        else:
+            # On Windows, send CTRL_BREAK_EVENT to the process group (works if process was created with CREATE_NEW_PROCESS_GROUP)
+            try:
+                ffmpeg_proc.send_signal(signal.CTRL_BREAK_EVENT)
+            except Exception:
+                ffmpeg_proc.terminate()
+
+        # wait a little for process to exit (non-blocking)
+        try:
+            await asyncio.wait_for(asyncio.to_thread(ffmpeg_proc.wait), timeout=3.0)
+            ret = ffmpeg_proc.returncode
+            ffmpeg_proc = None
+            return {"ok": True, "status": "terminated", "returncode": ret}
+        except asyncio.TimeoutError:
+            # still alive -> force kill
+            if os.name != "nt":
+                os.killpg(os.getpgid(ffmpeg_proc.pid), signal.SIGKILL)
+            else:
+                ffmpeg_proc.kill()
+
+            # wait again briefly
+            try:
+                await asyncio.wait_for(asyncio.to_thread(ffmpeg_proc.wait), timeout=2.0)
+            except asyncio.TimeoutError:
+                # give up — report still running
+                return {"ok": False, "status": "failed_to_kill", "pid": ffmpeg_proc.pid}
+
+            ret = ffmpeg_proc.returncode
+            ffmpeg_proc = None
+            return {"ok": True, "status": "killed", "returncode": ret}
+
+    except Exception as e:
+        # best-effort cleanup
+        try:
+            ffmpeg_proc.kill()
+        except Exception:
+            pass
+        ffmpeg_proc = None
+        return {"ok": False, "status": "error", "error": str(e)}
+
+
 # ------------------------
-# WEBSOCKET ROUTE
+# WEBSOCKET ROUTES
 # ------------------------
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
@@ -944,6 +962,9 @@ async def websocket_endpoint(ws: WebSocket):
         uav_clients.discard(ws)
 
 
+current_amr_pose: Dict[str, Any] = {}
+
+
 @app.websocket("/ws/amr_stations")
 async def amr_stations_ws(websocket: WebSocket):
     await websocket.accept()
@@ -972,15 +993,11 @@ async def amr_stations_ws(websocket: WebSocket):
                 if not name:
                     continue
 
-                # for now just create a placeholder; ROS/IPC can later fill pose
                 existing = stations.get(name)
                 if existing is None:
-                    stations[name] = {"x": 0, "y": 0}  # or leave {} if you prefer
-                # if you want to allow waypoints list, you can adapt this logic
+                    stations[name] = {"x": 0, "y": 0}
 
                 save_stations_to_file()
-
-                # Optionally forward to IPC if connected
                 await ipc_send({"type": "save_station", "name": name})
                 continue
 
@@ -1007,74 +1024,17 @@ async def amr_stations_ws(websocket: WebSocket):
 
     except WebSocketDisconnect:
         print("[WS] browser client disconnected (stations)")
+
     finally:
         amr_clients.discard(websocket)
 
 
 # ------------------------
-# APP STARTUP: create UDP listener
+# IPC CONNECTOR (AMR)
 # ------------------------
-@app.on_event("startup")
-async def startup_event():
-    global udp_transport
-    load_stations_from_file()
-    loop = asyncio.get_running_loop()
-#   loop.create_task(broadcast_uav(...)) if it breaks in later versions
-    udp_transport, _ = await loop.create_datagram_endpoint(
-        lambda: MavlinkUDPProtocol(),
-        local_addr=(UDP_LISTEN_HOST, UDP_LISTEN_PORT),
-    )
-    print(f"✅ UDP listening on {UDP_LISTEN_HOST}:{UDP_LISTEN_PORT}")
-    os.makedirs(HLS_OUTPUT_DIR, exist_ok=True)
-
-    ff_cmd = [
-        "ffmpeg",
-        "-rtsp_transport", "tcp",
-        "-i", RTSP_URL,
-        "-codec:v", "copy",
-        "-codec:a", "aac", "-an",
-        "-f", "hls",
-        "-hls_time", "1",
-        "-hls_list_size", "5",
-        "-hls_flags", "delete_segments",
-        os.path.join(HLS_OUTPUT_DIR, "stream.m3u8"),
-    ]
-
-    try:
-        subprocess.Popen(ff_cmd)
-        print("🎥 ffmpeg started for RTSP → HLS")
-    except Exception as e:
-        print("⚠️ Failed to start ffmpeg:", e)
-    asyncio.create_task(ipc_connector())
-    asyncio.create_task(gcs_keepalive_task())
-
-
-async def gcs_keepalive_task():
-    """Periodically poke the drone so it keeps sending us MAVLink."""
-    await asyncio.sleep(5.0)  # wait for startup
-    while True:
-        try:
-            # pick a sysid, same logic as /api/test-mavlink
-            if valid_sysids_with_heartbeat:
-                target_sysid = sorted(valid_sysids_with_heartbeat)[0]
-            elif last_telemetry_by_sysid:
-                target_sysid = sorted(last_telemetry_by_sysid.keys())[0]
-            else:
-                target_sysid = 1
-
-            target_compid = 1  # autopilot
-            params = [float(GLOBAL_POSITION_INT_ID), 1.0, 0, 0, 0, 0, 0]
-
-            send_command_long(target_sysid, target_compid, MAV_CMD_REQUEST_MESSAGE, params)
-        except Exception as e:
-            print("Keepalive error:", e)
-
-        await asyncio.sleep(2.0)  # every 2 seconds
-
-
 async def ipc_connector():
     """Background task: connect to IPC and listen for messages."""
-    global ipc_ws, stations, current_odom_text, map_image_url
+    global ipc_ws, stations, current_odom_text, map_image_url, current_amr_pose
 
     while True:
         try:
@@ -1084,7 +1044,6 @@ async def ipc_connector():
                 async with ipc_lock:
                     ipc_ws = ws
 
-                # send initial stations we have on disk
                 await ipc_send({"type": "stations_data", "stations": stations})
 
                 async for raw in ws:
@@ -1111,7 +1070,6 @@ async def ipc_connector():
                         await broadcast_amr({"type": "map_update", "url": map_image_url})
 
                     elif msg_type == "amr_pose":
-                        global current_amr_pose
                         current_amr_pose = {
                             "x": msg.get("x"),
                             "y": msg.get("y"),
@@ -1121,21 +1079,132 @@ async def ipc_connector():
                             "type": "amr_pose", **current_amr_pose,
                         })
 
+                    elif msg_type == "zed_frame":
+                        # cache latest (optional)
+                        latest_zed_frame.clear()
+                        latest_zed_frame.update({
+                            "jpeg": msg.get("jpeg"),
+                            "stamp": msg.get("stamp"),
+                            "frame_id": msg.get("frame_id"),
+                        })
+                        # LIVE forward to all interested clients
+                        await broadcast_zed_frame({
+                            "type": "zed_frame",
+                            **latest_zed_frame,
+                        })
+
                     else:
                         print("[IPC] unhandled message from IPC:", msg)
+
 
         except Exception as e:
             print(f"[IPC] connection error: {e}")
         finally:
             async with ipc_lock:
                 ipc_ws = None
-        # retry every 3 seconds
         await asyncio.sleep(3.0)
 
 
+async def broadcast_zed_frame(obj: Dict[str, Any]) -> None:
+    text = json.dumps(obj)
+
+    dead_uav = []
+    dead_amr = []
+
+    for ws in uav_clients:
+        try:
+            await ws.send_text(text)
+        except Exception:
+            dead_uav.append(ws)
+
+    for ws in amr_clients:
+        try:
+            await ws.send_text(text)
+        except Exception:
+            dead_amr.append(ws)
+
+    for ws in dead_uav:
+        uav_clients.discard(ws)
+    for ws in dead_amr:
+        amr_clients.discard(ws)
+
+
 # ------------------------
-# RUN
+# APP STARTUP
 # ------------------------
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=HTTP_PORT, reload=True)
+@app.on_event("startup")
+async def startup_event():
+    global mav_reader_task_handle, gcs_keepalive_task_handle, ipc_connector_task_handle
+
+    load_stations_from_file()
+
+    # Non-blocking MAVLink init
+    init_mavlink()
+
+    # Start MAVLink reader + keepalive + IPC
+    mav_reader_task_handle = asyncio.create_task(mavlink_reader_task(), name="mavlink_reader")
+    gcs_keepalive_task_handle = asyncio.create_task(gcs_keepalive_task(), name="gcs_keepalive")
+    ipc_connector_task_handle = asyncio.create_task(ipc_connector(), name="ipc_connector")
+
+    # Video directory + ffmpeg stuff
+    os.makedirs(HLS_OUTPUT_DIR, exist_ok=True)
+    ff_cmd = [
+        "ffmpeg",
+        "-rtsp_transport", "tcp",
+        "-i", RTSP_URL,
+        "-codec:v", "copy",
+        "-codec:a", "aac", "-an",
+        "-f", "hls",
+        "-hls_time", "1",
+        "-hls_list_size", "5",
+        "-hls_flags", "delete_segments",
+        os.path.join(HLS_OUTPUT_DIR, "stream.m3u8"),
+    ]
+
+    try:
+        subprocess.Popen(ff_cmd)
+        print("🎥 ffmpeg started for RTSP → HLS")
+    except Exception as e:
+        print("⚠️ Failed to start ffmpeg:", e)
+    asyncio.create_task(ipc_connector())
+    asyncio.create_task(gcs_keepalive_task())
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global ffmpeg_proc, mav_reader_task_handle, gcs_keepalive_task_handle, ipc_connector_task_handle, ipc_ws, mav_master
+
+    print("[APP] Shutdown: cancelling background tasks...")
+
+    for task in (mav_reader_task_handle, gcs_keepalive_task_handle, ipc_connector_task_handle):
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    # Close IPC websocket if open
+    if ipc_ws is not None:
+        try:
+            await ipc_ws.close()
+        except Exception:
+            pass
+        ipc_ws = None
+
+    # Close MAVLink connection
+    if mav_master is not None:
+        try:
+            mav_master.close()
+        except Exception:
+            pass
+        mav_master = None
+
+        if ffmpeg_proc is not None:
+            try:
+                ffmpeg_proc.terminate()
+            except Exception:
+                pass
+            ffmpeg_proc = None
+
+    print("[APP] Shutdown complete.")

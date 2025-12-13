@@ -34,7 +34,7 @@ class AMRIPCNode(Node):
             OccupancyGrid, "/map", self.map_callback, 10
         )
         self.create_subscription(
-            PoseWithCovarianceStamped, "/pcl_pose", self.pcl_pose_callback, 10
+            PoseWithCovarianceStamped, "/amcl_pose", self.pcl_pose_callback, 10
         )
 
         # Nav2 actions
@@ -378,7 +378,7 @@ async def broadcast(msg: Dict[str, Any]):
         connected_clients.discard(ws)
 
 
-async def handle_client(websocket, path):
+async def handle_client(websocket):
     global node
     connected_clients.add(websocket)
     print("[IPC] command-center connected")
