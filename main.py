@@ -2,6 +2,9 @@ import asyncio
 import subprocess
 import base64
 import json
+import signal
+import sys
+import threading
 import os
 import socket
 import time
@@ -15,6 +18,7 @@ import websockets
 
 from pymavlink import mavutil
 from pymavlink.dialects.v20 import ardupilotmega as mavlink2
+
 
 # ------------------------
 # VIDEO / RTSP CONFIG
@@ -67,11 +71,13 @@ GIMBAL_COMP_ID = 1       # MAV_COMP_ID_AUTOPILOT (FC); gimbal manager handled th
 MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW = 1000
 
 ffmpeg_proc = None
+ffmpeg_running = False
+ffmpeg_thread = None
+stop_event = threading.Event()
 current_amr_pose = {}
 
 # Latest ZED frame (optional cache)
 latest_zed_frame: Dict[str, Any] = {}
-
 
 # ------------------------
 # APP & STATIC
@@ -115,9 +121,50 @@ gcs_keepalive_task_handle: Optional[asyncio.Task] = None
 ipc_connector_task_handle: Optional[asyncio.Task] = None
 
 
-
 def get_current_user(request: Request):
     return "admin"
+
+
+def ffmpeg_loop(ff_cmd):
+    global ffmpeg_proc
+
+    while not stop_event.is_set():
+        print("▶ Starting FFmpeg...")
+        ffmpeg_proc = subprocess.Popen(
+            ff_cmd,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+
+        while ffmpeg_proc.poll() is None and not stop_event.is_set():
+            time.sleep(0.5)
+
+        if stop_event.is_set():
+            break
+
+        print("⚠ FFmpeg exited, restarting in 2s...")
+        time.sleep(2)
+
+    print("🛑 FFmpeg loop stopped")
+
+
+def ffmpeg_watchdog(ff_cmd):
+    global ffmpeg_proc, ffmpeg_running
+
+    ffmpeg_running = True
+
+    while ffmpeg_running:
+        print("▶ starting ffmpeg")
+        ffmpeg_proc = subprocess.Popen(ff_cmd)
+
+        ffmpeg_proc.wait()
+
+        if not ffmpeg_running:
+            break
+
+        print("⚠ ffmpeg stopped, restarting in 2s")
+        time.sleep(2)
+
+    print("🛑 ffmpeg watchdog exited")
 
 
 # ------------------------
@@ -265,11 +312,21 @@ async def mavlink_reader_task():
         t["receivedAt"] = now_ms
 
         if mtype == "HEARTBEAT":
-            t["customMode"] = msg.custom_mode
+            t["mode"] = msg.custom_mode
             t["baseMode"] = msg.base_mode
             t["systemStatus"] = msg.system_status
             t["armed"] = bool(msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED)
             valid_sysids_with_heartbeat.add(sysid)
+
+            if t["armed"]:
+                t["uiStatus"] = "ARMED"
+            elif msg.system_status in (
+                    mavutil.mavlink.MAV_STATE_UNINIT,
+                    mavutil.mavlink.MAV_STATE_CALIBRATING,
+            ):
+                t["uiStatus"] = "INITIALIZING"
+            else:
+                t["uiStatus"] = "READY"
 
         elif mtype == "SYS_STATUS":
             v_batt = msg.voltage_battery
@@ -831,95 +888,75 @@ async def get_amr_pose():
 
 @app.post("/api/fpv/start")
 async def fpv_start():
-    global ffmpeg_proc
+    global ffmpeg_thread
 
-    # If already running → OK, return success
-    if ffmpeg_proc and ffmpeg_proc.poll() is None:
+    if ffmpeg_thread and ffmpeg_thread.is_alive():
         return {"ok": True, "status": "already_running"}
+
+    stop_event.clear()
 
     ff_cmd = [
         "ffmpeg",
+
         "-rtsp_transport", "tcp",
+
+        # tolerate broken input
+        "-fflags", "+discardcorrupt",
+        "-err_detect", "ignore_err",
+
         "-i", RTSP_URL,
-        "-c:v", "copy",
+
+        # video only
+        "-map", "0:v:0",
         "-an",
+
+        # transcode to browser-safe H.264
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-tune", "zerolatency",
+        "-pix_fmt", "yuv420p",
+
+        # 🔽 low FPS + fast recovery
+        "-r", "10",  # 10 FPS
+        "-g", "10",  # keyframe every second
+        "-keyint_min", "10",
+        "-sc_threshold", "0",
+
+        # HLS output
         "-f", "hls",
         "-hls_time", "1",
-        "-hls_list_size", "5",
-        "-hls_flags", "delete_segments",
+        "-hls_list_size", "3",
+        "-hls_flags", "delete_segments+append_list",
+
         os.path.join(HLS_OUTPUT_DIR, "stream.m3u8"),
     ]
 
-    try:
-        ffmpeg_proc = subprocess.Popen(
-            ff_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-        )
-        print("🎥 FPV started, PID:", ffmpeg_proc.pid)
-        return ffmpeg_proc
-        # return {"ok": True}
+    ffmpeg_thread = threading.Thread(
+        target=ffmpeg_watchdog,
+        args=(ff_cmd,),
+        daemon=True
+    )
+    ffmpeg_thread.start()
 
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    return {"ok": True, "status": "started"}
 
 
 @app.post("/api/fpv/stop")
 async def fpv_stop():
     global ffmpeg_proc
-    if not ffmpeg_proc:
-        return {"ok": True, "status": "not_running"}
 
-    # If process already exited
-    if ffmpeg_proc.poll() is not None:
-        ffmpeg_proc = None
-        return {"ok": True, "status": "not_running"}
+    stop_event.set()
 
-    try:
-        # Try graceful stop first
-        if os.name != "nt":
-            # send SIGTERM to the whole process group
-            os.killpg(os.getpgid(ffmpeg_proc.pid), signal.SIGTERM)
-        else:
-            # On Windows, send CTRL_BREAK_EVENT to the process group (works if process was created with CREATE_NEW_PROCESS_GROUP)
-            try:
-                ffmpeg_proc.send_signal(signal.CTRL_BREAK_EVENT)
-            except Exception:
-                ffmpeg_proc.terminate()
-
-        # wait a little for process to exit (non-blocking)
+    if ffmpeg_proc and ffmpeg_proc.poll() is None:
         try:
-            await asyncio.wait_for(asyncio.to_thread(ffmpeg_proc.wait), timeout=3.0)
-            ret = ffmpeg_proc.returncode
-            ffmpeg_proc = None
-            return {"ok": True, "status": "terminated", "returncode": ret}
-        except asyncio.TimeoutError:
-            # still alive -> force kill
-            if os.name != "nt":
-                os.killpg(os.getpgid(ffmpeg_proc.pid), signal.SIGKILL)
-            else:
-                ffmpeg_proc.kill()
-
-            # wait again briefly
-            try:
-                await asyncio.wait_for(asyncio.to_thread(ffmpeg_proc.wait), timeout=2.0)
-            except asyncio.TimeoutError:
-                # give up — report still running
-                return {"ok": False, "status": "failed_to_kill", "pid": ffmpeg_proc.pid}
-
-            ret = ffmpeg_proc.returncode
-            ffmpeg_proc = None
-            return {"ok": True, "status": "killed", "returncode": ret}
-
-    except Exception as e:
-        # best-effort cleanup
-        try:
+            ffmpeg_proc.send_signal(signal.CTRL_BREAK_EVENT)
+            time.sleep(1)
             ffmpeg_proc.kill()
         except Exception:
             pass
-        ffmpeg_proc = None
-        return {"ok": False, "status": "error", "error": str(e)}
+
+    ffmpeg_proc = None
+    return {"ok": True, "status": "stopped"}
 
 
 # ------------------------
@@ -1134,7 +1171,7 @@ async def broadcast_zed_frame(obj: Dict[str, Any]) -> None:
 # ------------------------
 @app.on_event("startup")
 async def startup_event():
-    global mav_reader_task_handle, gcs_keepalive_task_handle, ipc_connector_task_handle
+    global mav_reader_task_handle, gcs_keepalive_task_handle, ipc_connector_task_handle, ffmpeg_thread
 
     load_stations_from_file()
 
@@ -1152,20 +1189,40 @@ async def startup_event():
         "ffmpeg",
         "-rtsp_transport", "tcp",
         "-i", RTSP_URL,
-        "-codec:v", "copy",
-        "-codec:a", "aac", "-an",
+
+        # video: transcode so FPS & latency can change
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-tune", "zerolatency",
+        "-pix_fmt", "yuv420p",
+
+        # ↓ LOWER FPS + FAST RECOVERY
+        "-r", "10",  # 10 FPS
+        "-g", "10",  # keyframe every second
+        "-sc_threshold", "0",
+
+        # no audio
+        "-an",
+
+        # HLS
         "-f", "hls",
         "-hls_time", "1",
-        "-hls_list_size", "5",
-        "-hls_flags", "delete_segments",
+        "-hls_list_size", "3",
+        "-hls_flags", "delete_segments+append_list",
+
         os.path.join(HLS_OUTPUT_DIR, "stream.m3u8"),
     ]
 
     try:
-        subprocess.Popen(ff_cmd)
-        print("🎥 ffmpeg started for RTSP → HLS")
+        ffmpeg_thread = threading.Thread(
+            target=ffmpeg_watchdog,
+            args=(ff_cmd,),
+            daemon=True
+        )
+        ffmpeg_thread.start()
     except Exception as e:
         print("⚠️ Failed to start ffmpeg:", e)
+
     asyncio.create_task(ipc_connector())
     asyncio.create_task(gcs_keepalive_task())
 
@@ -1173,8 +1230,20 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     global ffmpeg_proc, mav_reader_task_handle, gcs_keepalive_task_handle, ipc_connector_task_handle, ipc_ws, mav_master
+    stop_event.set()
 
-    print("[APP] Shutdown: cancelling background tasks...")
+    global ffmpeg_running, ffmpeg_proc
+
+    print("🛑 shutting down ffmpeg")
+
+    ffmpeg_running = False
+
+    if ffmpeg_proc and ffmpeg_proc.poll() is None:
+        try:
+            ffmpeg_proc.terminate()
+            ffmpeg_proc.wait(timeout=3)
+        except Exception:
+            ffmpeg_proc.kill()
 
     for task in (mav_reader_task_handle, gcs_keepalive_task_handle, ipc_connector_task_handle):
         if task is not None:

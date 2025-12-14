@@ -1178,7 +1178,8 @@
       setText("tele_mode", t.mode || "—");
       const statusEl = document.getElementById("tele_status");
       if (statusEl) {
-        statusEl.textContent =  getSystemStatusDescription(t.systemStatus);
+        //statusEl.textContent =  getSystemStatusDescription(t.systemStatus);
+        statusEl.textContent =  t.uiStatus;
         statusEl.classList.remove("muted");
       }
 
@@ -2129,12 +2130,11 @@
     async function openFPV() {
       const fpv = document.getElementById("fpv");
       const video = document.getElementById("fpvVideo");
-      const toggleBtn = document.getElementById("toggleFPV");
 
       // start backend ffmpeg
-      //await fetch("/api/fpv/start", { method: "POST" });
+     // await fetch("/api/fpv/start", { method: "POST" });
 
-      // show window in a safe default position
+      // show window
       fpv.style.display = "flex";
       fpv.style.visibility = "visible";
       fpv.style.top = "80px";
@@ -2149,11 +2149,8 @@
       } else {
         video.src = url;
       }
-
-      // change icon → pause
-      //toggleBtn.children[0].src = `<i data-lucide="pause"></i>`;
-      lucide.createIcons();
     }
+
 
     async function closeFPV() {
       const fpv = document.getElementById("fpv");
