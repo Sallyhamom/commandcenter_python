@@ -204,7 +204,9 @@
 
   /* right side small controls vertical */
   .right-tools{right:12px;top:220px;display:flex;flex-direction:column;gap:8px}
-  .tool{background:var(--panel);border:1px solid var(--border);padding:8px;border-radius:12px;backdrop-filter: blur(6px);cursor:pointer}
+  .tool{background:var(--panel);border:1px solid var(--border);padding:8px;border-radius:12px;backdrop-filter: blur(6px);cursor:pointer;display: flex;
+  align-items: center;     /* vertical center */
+  justify-content: center; /* horizontal center */}
 
   /* bottom bar */
   .bottombar{height:30px;background:linear-gradient(180deg, rgba(0,0,0,0.06), transparent);display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-top:1px solid var(--border);z-index:20;position:relative}
@@ -1049,7 +1051,7 @@
       <div class="stat">Mission: <strong id="currentMission">Sky Watch</strong></div>
       <div class="stat">ETA: <strong id="eta">08:20</strong></div>
       <div class="stat">Distance: <strong id="distance">1.2 km</strong></div>
-      <div id="mavlinkStatus" class="status-pill">MAVLink: Unknown</div>
+      <!--<div id="mavlinkStatus" class="status-pill">MAVLink: Unknown</div>-->
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <div style="font-size:13px;color:var(--muted)">User: Admin</div>
@@ -1954,7 +1956,7 @@
 
         <div id="circleInputs">
           <label>Radius (meters): </label>
-          <input type="number" id="radiusInput" value="50" min="50" step="10">
+          <input type="number" id="radiusInput" value="50" min="30" step="10">
         </div>
 
         <div id="rectInputs" style="display:none;">
@@ -2230,10 +2232,12 @@
 
     document.getElementById("arm-disarm").onclick = () => {
       arm_bool = !arm_bool
+      console.log("arming ?"+arm_bool);
       document.getElementsByClassName("plate")[0].classList.toggle("on")
       if(arm_bool){
         sendCommand("ARM");
       }else{
+        console.log("DISARM");
         sendCommand("DISARM");
       }
     };
@@ -2306,13 +2310,13 @@
         wpList.appendChild(li);
       });
     }
-    const mavlinkStatusEl = document.getElementById("mavlinkStatus"); // e.g. a small dot/label
+    //const mavlinkStatusEl = document.getElementById("mavlinkStatus"); // e.g. a small dot/label
 
     async function pollMavlinkStatus() {
       try {
         const res = await fetch("http://localhost:4000/api/mavlink-status");
         const data = await res.json();
-        if (data.connected) {
+        /*if (data.connected) {
           mavlinkStatusEl.textContent = "MAVLink: Connected";
           mavlinkStatusEl.classList.add("ok");
           mavlinkStatusEl.classList.remove("bad");
@@ -2320,15 +2324,15 @@
           mavlinkStatusEl.textContent = "MAVLink: Disconnected";
           mavlinkStatusEl.classList.add("bad");
           mavlinkStatusEl.classList.remove("ok");
-        }
+        }*/
       } catch (e) {
         console.error("mavlink status failed", e);
-        mavlinkStatusEl.textContent = "MAVLink: Error";
+        //mavlinkStatusEl.textContent = "MAVLink: Error";
       }
     }
 
     // poll every 2 seconds
-    setInterval(pollMavlinkStatus, 2000);
+    setInterval(pollMavlinkStatus, 5000);
     pollMavlinkStatus();
 
     function updateDroneOnMap(sysid, lat, lng) {

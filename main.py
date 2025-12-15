@@ -92,7 +92,7 @@ if os.path.isdir(FRONTEND_DIR):
 app.mount("/hls", StaticFiles(directory=HLS_OUTPUT_DIR), name="hls")
 
 # IP / port of the IPC on the AMR:
-IPC_WS_URL = "ws://192.168.12.165:8765"   # change to your AMR IPC IP
+IPC_WS_URL = "ws://192.168.144.50:8765"   # change to your AMR IPC IP
 
 # ---------- STATE ----------
 stations: Dict[str, Any] = {}
@@ -220,10 +220,16 @@ def init_mavlink():
 # ------------------------
 # COMMAND_LONG (PYMAVLINK)
 # ------------------------
-def send_command_long_pymav(target_sysid: int, target_compid: int, command: int, params):
+async def send_command_long_pymav(
+    target_sysid: int,
+    target_compid: int,
+    command: int,
+    params: list[float] | None = None,
+):
     global mav_master
+
     if mav_master is None:
-        print("❌ MAVLink master not ready, cannot send COMMAND_LONG")
+        print("❌ MAVLink master not ready")
         return
 
     if params is None:
@@ -231,22 +237,23 @@ def send_command_long_pymav(target_sysid: int, target_compid: int, command: int,
     if len(params) < 7:
         params = list(params) + [0.0] * (7 - len(params))
 
-    try:
-        mav_master.mav.command_long_send(
-            target_sysid,
-            target_compid,
-            command,
-            0,  # confirmation
-            float(params[0]),
-            float(params[1]),
-            float(params[2]),
-            float(params[3]),
-            float(params[4]),
-            float(params[5]),
-            float(params[6]),
-        )
-    except Exception as e:
-        print("Error sending COMMAND_LONG via pymavlink:", e)
+    async with mavlink_lock:
+        try:
+            mav_master.mav.command_long_send(
+                target_sysid,
+                target_compid,
+                command,
+                0,  # confirmation
+                float(params[0]),
+                float(params[1]),
+                float(params[2]),
+                float(params[3]),
+                float(params[4]),
+                float(params[5]),
+                float(params[6]),
+            )
+        except Exception as e:
+            print("❌ COMMAND_LONG send failed:", e)
 
 
 # ------------------------
@@ -398,13 +405,15 @@ async def gcs_keepalive_task():
             target_compid = mav_master.target_component or 1
             params = [float(GLOBAL_POSITION_INT_ID), 1.0, 0, 0, 0, 0, 0]
 
-            mav_master.mav.command_long_send(
-                target_sysid,
-                target_compid,
-                MAV_CMD_REQUEST_MESSAGE,
-                0,
-                *params
-            )
+            async with mavlink_lock:
+                mav_master.mav.command_long_send(
+                    target_sysid,
+                    target_compid,
+                    MAV_CMD_REQUEST_MESSAGE,
+                    0,
+                    *params
+                )
+
         except Exception as e:
             print("Keepalive error:", e)
 
@@ -445,7 +454,7 @@ async def broadcast_amr(obj: Dict[str, Any]) -> None:
 # ------------------------
 # COMMAND HANDLER (from UI)
 # ------------------------
-def handle_command_from_ui(message: Dict[str, Any]) -> None:
+async def handle_command_from_ui(message: Dict[str, Any]) -> None:
     global gimbal_pitch_deg, gimbal_yaw_deg
 
     cmd = message.get("cmd")
@@ -465,23 +474,23 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
 
     if cmd == "TAKE_PHOTO":
         params = [0, 0, 0, 0, 1, 0, 0]
-        send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_DO_DIGICAM_CONTROL, params)
+        await send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_DO_DIGICAM_CONTROL, params)
 
     elif cmd == "REC_START":
         params = [0, 1, 0, 0, 0, 0, 0]
-        send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_VIDEO_START_CAPTURE, params)
+        await send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_VIDEO_START_CAPTURE, params)
 
     elif cmd == "REC_STOP":
         params = [0, 1, 0, 0, 0, 0, 0]
-        send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_VIDEO_STOP_CAPTURE, params)
+        await send_command_long_pymav(target_sys_id, target_comp_id, MAV_CMD_VIDEO_STOP_CAPTURE, params)
 
     elif cmd == "ZOOM_IN":
         params = [1, 0.05, 0, 0, 0, 0, 0]
-        send_command_long_pymav(target_sys_id, 1, MAV_CMD_SET_CAMERA_ZOOM, params)
+        await send_command_long_pymav(target_sys_id, 1, MAV_CMD_SET_CAMERA_ZOOM, params)
 
     elif cmd == "ZOOM_OUT":
         params = [1, -0.05, 0, 0, 0, 0, 0]
-        send_command_long_pymav(target_sys_id, 1, MAV_CMD_SET_CAMERA_ZOOM, params)
+        await send_command_long_pymav(target_sys_id, 1, MAV_CMD_SET_CAMERA_ZOOM, params)
 
     elif cmd in ("GIMBAL_UP", "GIMBAL_DOWN", "GIMBAL_LEFT", "GIMBAL_RIGHT", "GIMBAL_CENTER"):
         step = 5.0  # degrees per click
@@ -508,7 +517,7 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
             0.0, 0.0, 0.0,
             2.0,               # param7: MAV_MOUNT_MODE_MAVLINK_TARGETING
         ]
-        send_command_long_pymav(target_sys_id, 1, MAV_CMD_DO_MOUNT_CONTROL, mount_params)
+        # send_command_long_pymav(target_sys_id, 1, MAV_CMD_DO_MOUNT_CONTROL, mount_params)
 
         # --- 2) New Gimbal Manager style (MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW) ---
         gm_params = [
@@ -520,7 +529,7 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
             0.0,               # param6: reserved
             0.0,               # param7: gimbal instance id (0 for only gimbal)
         ]
-        send_command_long_pymav(target_sys_id, 1, MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, gm_params)
+        await send_command_long_pymav(target_sys_id, 1, MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, gm_params)
 
         print(
             f"📨 Sent gimbal cmd={cmd} pitch={gimbal_pitch_deg:.1f} "
@@ -534,9 +543,9 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
         print("🛰 Mission upload requested (still using C2-side simulation):", mission)
         # For now we keep this as C2-only "logical mission"; no real mission upload over RC
         # You can keep or extend your existing send_waypoint_sequence_to_drone if you want to simulate
-        try:
+        """try:
             loop = asyncio.get_event_loop()
-            loop.create_task(
+            await loop.create_task(
                 broadcast_uav({
                     "type": "mission_ack",
                     "status": "sent",
@@ -545,16 +554,22 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
             )
 
         except RuntimeError:
-            asyncio.create_task(
+            await asyncio.create_task(
                 broadcast_uav({
                     "type": "mission_ack",
                     "status": "sent",
                     "missionName": mission.get("missionName", "Untitled"),
                 })
-            )
+            )"""
+        await broadcast_uav({
+                    "type": "mission_ack",
+                    "status": "sent",
+                    "missionName": mission.get("missionName", "Untitled"),
+                })
+
     elif cmd == "ARM":
         params = [1, 0, 0, 0, 0, 0, 0]  # arm
-        send_command_long_pymav(
+        await send_command_long_pymav(
             target_sys_id,
             1,
             MAV_CMD_COMPONENT_ARM_DISARM,  # MAV_CMD_COMPONENT_ARM_DISARM
@@ -563,8 +578,9 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
         # send_command_long_pymav(target_sys_id, 1, MAV_CMD_COMPONENT_ARM_DISARM, params)
 
     elif cmd == "DISARM":
-        params = [0, 0, 0, 0, 0, 0, 0]
-        send_command_long_pymav(
+        print("I am here")
+        params = [0, 21196, 0, 0, 0, 0, 0] # arm
+        await send_command_long_pymav(
             target_sys_id,
             1,
             MAV_CMD_COMPONENT_ARM_DISARM,  # MAV_CMD_COMPONENT_ARM_DISARM
@@ -574,13 +590,13 @@ def handle_command_from_ui(message: Dict[str, Any]) -> None:
     else:
         print("Unknown command from UI:", cmd)
 
-
+"""
 def arm_disarm(master, target_sysid: Optional[int] = None, arm: bool = True, timeout_s: float = 5.0):
-    """
+    
     Send MAV_CMD_COMPONENT_ARM_DISARM to target_sysid (or choose a default).
     Blocks waiting for COMMAND_ACK (up to timeout_s).
     Returns a dict {ok: bool, result: int, text: str}
-    """
+
     global mav_master, valid_sysids_with_heartbeat, last_telemetry_by_sysid
 
     if master is None:
@@ -646,7 +662,7 @@ def arm_disarm(master, target_sysid: Optional[int] = None, arm: bool = True, tim
             # not the ack we want; continue waiting
             continue
 
-    return {"ok": False, "error": "timeout waiting for COMMAND_ACK"}
+    return {"ok": False, "error": "timeout waiting for COMMAND_ACK"}"""
 
 
 # ----------ROS HELPERS ----------
@@ -735,7 +751,7 @@ async def add_notification(n: Dict[str, Any]):
 async def login(body: Dict[str, Any]):
     username = body.get("username")
     password = body.get("password")
-    if username == "admin" and password == "12345":
+    if username == "admin" and password == "V1n1maya":
         return RedirectResponse(url="/menu", status_code=303)
     return JSONResponse({"error": "Invalid credentials"}, status_code=401)
 
@@ -778,13 +794,14 @@ async def test_mavlink(sysid: Optional[int] = None):
     ]
 
     # 4) Send the command
-    mav_master.mav.command_long_send(
-        target_sysid,
-        target_compid,
-        MAV_CMD_REQUEST_MESSAGE,
-        0,
-        *params
-    )
+    async with mavlink_lock:
+        mav_master.mav.command_long_send(
+            target_sysid,
+            target_compid,
+            MAV_CMD_REQUEST_MESSAGE,
+            0,
+            *params
+        )
     print(
         f"➡ TEST: sent MAV_CMD_REQUEST_MESSAGE ({GLOBAL_POSITION_INT_ID}) "
         f"to sys={target_sysid} comp={target_compid}"
@@ -815,7 +832,7 @@ async def test_gimbal_nudge(sysid: Optional[int] = None):
         else:
             target_sys_id = 1
 
-    handle_command_from_ui({
+    await handle_command_from_ui({
         "cmd": "GIMBAL_DOWN",
         "sysid": target_sys_id,
     })
@@ -990,7 +1007,7 @@ async def websocket_endpoint(ws: WebSocket):
                 continue
 
             if msg.get("type") == "command":
-                handle_command_from_ui(msg)
+                await handle_command_from_ui(msg)
             else:
                 print("WS message (unknown type):", msg)
     except WebSocketDisconnect:
@@ -1223,8 +1240,8 @@ async def startup_event():
     except Exception as e:
         print("⚠️ Failed to start ffmpeg:", e)
 
-    asyncio.create_task(ipc_connector())
-    asyncio.create_task(gcs_keepalive_task())
+    # asyncio.create_task(ipc_connector())
+    # asyncio.create_task(gcs_keepalive_task())
 
 
 @app.on_event("shutdown")
