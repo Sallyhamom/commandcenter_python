@@ -986,6 +986,16 @@
         </div>
 
         <div class="fpv-video">
+          <div id="fpvLoading"
+               style="position:absolute;inset:0;
+                      background:black;
+                      display:flex;
+                      align-items:center;
+                      justify-content:center;
+                      color:white;">
+            Loading video…
+          </div>
+
            <video id="fpvVideo" autoplay playsinline muted></video>
           <!--<video style="background-color:black" id="fpvVideo" width="800" height="450" autoplay playsinline controls muted></video>-->
         </div>
@@ -2130,63 +2140,22 @@
     // ======================= FPV OPEN / CLOSE =========================
 
     async function openFPV() {
+      console.log("starting")
       const fpv = document.getElementById("fpv");
-      const video = document.getElementById("fpvVideo");
 
-      // start backend ffmpeg
-     // await fetch("/api/fpv/start", { method: "POST" });
-
-      // show window
       fpv.style.display = "flex";
       fpv.style.visibility = "visible";
       fpv.style.top = "80px";
       fpv.style.left = "80px";
 
-      // load HLS
-      const url = "/hls/stream.m3u8";
-      if (Hls.isSupported()) {
-        window.hls = new Hls();
-        hls.loadSource(url);
-        hls.attachMedia(video);
-      } else {
-        video.src = url;
-      }
+      startWebRTC();
     }
-
 
     async function closeFPV() {
-      const fpv = document.getElementById("fpv");
-      const video = document.getElementById("fpvVideo");
-      const toggleBtn = document.getElementById("toggleFPV");
-
-      // stop video
-      try { video.pause(); video.removeAttribute("src"); video.load(); } catch(e){}
-
-      // destroy hls
-      if (window.hls) {
-        try { window.hls.destroy(); } catch(e){}
-        window.hls = null;
-      }
-
-      // stop backend ffmpeg
-     // await fetch("/api/fpv/stop", { method: "POST" });
-
-      // hide FPV window
-      fpv.style.display = "none";
-
-      // restore play icon
-      //toggleBtn.innerHTML = `<i data-lucide="play"></i> FPV`;
-      lucide.createIcons();
+      stopWebRTC();
+      document.getElementById("fpv").style.display = "none";
     }
 
-
-
-    document.getElementById("closeFPV").onclick = () => {
-      const video = document.getElementById("fpvVideo");
-      video.pause();
-      video.src = "";
-      document.getElementById("fpv").style.display = "none";
-    };
 
     // ============= Camera Controls via WebSocket =============
     document.getElementById("takePhoto").onclick = () => {
@@ -2413,6 +2382,89 @@
     })();
 
   });
+  // ===================== WEBRTC FPV =====================
+  let fpvPc = null;
+  let fpvWs = null;
+
+  async function startWebRTC() {
+    const video = document.getElementById("fpvVideo");
+    const loading = document.getElementById("fpvLoading");
+    fpvPc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    });
+
+    // 🔥 REQUIRED: tell browser it wants video
+    fpvPc.addTransceiver("video", { direction: "recvonly" });
+
+    fpvPc.ontrack = (e) => {
+
+      video.srcObject = e.streams[0];
+
+      video.onloadeddata = () => {
+        loading.style.display = "none";
+        video.play();
+      };
+    };
+
+
+
+
+
+    fpvWs = new WebSocket(
+      (location.protocol === "https:" ? "wss://" : "ws://") +
+      location.hostname +
+      ":4000/ws/mk32_webrtc"
+    );
+
+    fpvWs.onmessage = async (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === "answer") {
+        await fpvPc.setRemoteDescription({
+          type: "answer",
+          sdp: msg.sdp
+        });
+      } else if (msg.type === "ice") {
+        await fpvPc.addIceCandidate(msg.candidate);
+      }
+    };
+
+    fpvWs.onopen = async () => {
+      const offer = await fpvPc.createOffer();
+      await fpvPc.setLocalDescription(offer);
+
+      fpvWs.send(JSON.stringify({
+        type: "offer",
+        sdp: offer.sdp
+      }));
+    };
+
+    fpvPc.onicecandidate = (event) => {
+      if (event.candidate) {
+        fpvWs.send(JSON.stringify({
+          type: "ice",
+          candidate: event.candidate
+        }));
+      }
+    };
+  }
+
+
+  function stopWebRTC() {
+    if (fpvPc) {
+      fpvPc.close();
+      fpvPc = null;
+    }
+    if (fpvWs) {
+      fpvWs.close();
+      fpvWs = null;
+    }
+
+    const video = document.getElementById("fpvVideo");
+    video.pause();
+    video.srcObject = null;
+  }
+
 
 </script>
 

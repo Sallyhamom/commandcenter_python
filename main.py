@@ -17,13 +17,16 @@ from fastapi.staticfiles import StaticFiles
 import websockets
 
 from pymavlink import mavutil
-from pymavlink.dialects.v20 import ardupilotmega as mavlink2
 
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
+from aiortc.contrib.media import MediaPlayer
+from aiortc.rtcrtpsender import RTCRtpSender
 
 # ------------------------
 # VIDEO / RTSP CONFIG
 # ------------------------
-RTSP_URL = "rtsp://192.168.144.26:8554/main.264"
+# RTSP_URL = "rtsp://192.168.144.26:8554/main.264"
+RTSP_URL = "rtsp://rtspstream:POB-48SOLYWIPDJE5uX4v@zephyr.rtsp.stream/people"
 HLS_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "hls")
 HLS_PLAYLIST = os.path.join(HLS_OUTPUT_DIR, "stream.m3u8")
 
@@ -70,6 +73,8 @@ GIMBAL_YAW_MAX = 180.0
 GIMBAL_COMP_ID = 1       # MAV_COMP_ID_AUTOPILOT (FC); gimbal manager handled there
 MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW = 1000
 
+#for rstp video
+pcs = set()
 ffmpeg_proc = None
 ffmpeg_running = False
 ffmpeg_thread = None
@@ -1014,6 +1019,64 @@ async def websocket_endpoint(ws: WebSocket):
         print("WebSocket client disconnected")
     finally:
         uav_clients.discard(ws)
+
+
+@app.websocket("/ws/mk32_webrtc")
+async def mk32_webrtc(ws: WebSocket):
+    await ws.accept()
+
+    pc = RTCPeerConnection()
+    pcs.add(pc)
+
+    player = MediaPlayer(
+        RTSP_URL,
+        format="rtsp",
+        options={
+            "rtsp_transport": "tcp",
+            "fflags": "nobuffer",
+            "flags": "low_delay",
+            "analyzeduration": "0",
+            "probesize": "32",
+            "max_delay": "0",
+            "video_codec": "h264",
+        }
+    )
+
+    pc.addTrack(player.video)
+
+    @pc.on("icecandidate")
+    async def on_ice(c):
+        if c:
+            await ws.send_text(json.dumps({
+                "type": "ice",
+                "candidate": {
+                    "candidate": c.candidate,
+                    "sdpMid": c.sdpMid,
+                    "sdpMLineIndex": c.sdpMLineIndex
+                }
+            }))
+
+    try:
+        async for raw in ws.iter_text():
+            msg = json.loads(raw)
+
+            if msg["type"] == "offer":
+                await pc.setRemoteDescription(
+                    RTCSessionDescription(msg["sdp"], "offer")
+                )
+                answer = await pc.createAnswer()
+                await pc.setLocalDescription(answer)
+
+                await ws.send_text(json.dumps({
+                    "type": "answer",
+                    "sdp": pc.localDescription.sdp
+                }))
+
+            elif msg["type"] == "ice":
+                await pc.addIceCandidate(msg["candidate"])
+
+    except WebSocketDisconnect:
+        pass
 
 
 current_amr_pose: Dict[str, Any] = {}
