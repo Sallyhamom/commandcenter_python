@@ -996,7 +996,13 @@
             Loading video…
           </div>
 
-           <video id="fpvVideo" autoplay playsinline muted></video>
+           <video
+              id="fpvVideo"
+              autoplay
+              muted
+              playsinline
+              controls
+              style="background:black"></video>
           <!--<video style="background-color:black" id="fpvVideo" width="800" height="450" autoplay playsinline controls muted></video>-->
         </div>
 
@@ -1041,7 +1047,7 @@
 
 
       </div>
-      <div class="plate">
+      <div class="plate" hidden>
         <div class="button" id="arm-disarm">
 
         </div>
@@ -1079,15 +1085,17 @@
 <script src="./static/libs/hls.js"></script>
 <script>
   const droneMarkers = {};  // { [sysid]: L.Marker }
-    const droneTrails  = {};  // { [sysid]: L.Polyline }
-    let firstDroneFix = false;
+  const droneTrails  = {};  // { [sysid]: L.Polyline }
+  let firstDroneFix = false;
 
-    const droneIcon = L.icon({
-      iconUrl: "/static/drone.png", // <-- your image path
-      iconSize: [30, 30],                // size in px
-      iconAnchor: [15, 15],              // where the "center" is in the icon
-    });
-    const defaultSysid = 1;
+  const droneIcon = L.icon({
+    iconUrl: "/static/drone.png", // <-- your image path
+    iconSize: [30, 30],                // size in px
+    iconAnchor: [15, 15],              // where the "center" is in the icon
+  });
+  const defaultSysid = 1;
+  let missionActive = false;
+  let totalSegments = 0;
   const MAV_STATE_LABELS = {
     0: "UNINIT",
     1: "BOOT",
@@ -1123,6 +1131,7 @@
     7: "status-poweroff",
     8: "status-flight-termination"
   };
+
 
   function formatSystemStatus(code) {
     if (code === undefined || code === null) return "UNKNOWN";
@@ -1219,8 +1228,21 @@
         setText("tele_distWp", t.distanceToWp != null ? `${formatNumber(t.distanceToWp, 1)} m` : "—");
       }
       // System
-      setText("tele_batt", t.batteryRemaining != null ? `${Math.round(t.batteryRemaining)}%` : "—");
-      setText("tele_battVolt", t.batteryVoltage != null ? `${formatNumber(t.batteryVoltage, 1)} V` : "—");
+      /*setText("tele_batt", t.batteryRemaining != null ? `${Math.round(t.batteryRemaining)}%` : "—");
+      setText("tele_battVolt", t.batteryVoltage != null ? `${formatNumber(t.batteryVoltage, 1)} V` : "—");*/
+      // ===== Hardcoded battery model =====
+      const BATTERY_VOLTAGE = 46.6;
+      const BATTERY_MIN = 40.0;
+      const BATTERY_MAX = 50.0;
+
+      // clamp
+      let percent = ((BATTERY_VOLTAGE - BATTERY_MIN) / (BATTERY_MAX - BATTERY_MIN)) * 100;
+      percent = Math.max(0, Math.min(100, percent));
+
+      // display
+      setText("tele_battVolt", `${BATTERY_VOLTAGE.toFixed(1)} V`);
+      setText("tele_batt", `${Math.round(percent)}%`);
+
       setText("tele_gps", t.fixType || "—");
       setText("tele_sats", t.sats != null ? `${t.sats}` : "—");
       setText("tele_link", t.linkQuality != null ? `${Math.round(t.linkQuality)}%` : "—");
@@ -1279,7 +1301,7 @@
            if (lat !== null && lng !== null) {
               // move / create the marker
               updateDroneOnMap(sysid, lat, lng);
-              console.log("here")
+              console.log(lat, lng);
               // on the very first fix, center map on the drone
               if (!firstDroneFix && typeof map !== "undefined") {
                 map.setView([lat, lng], 19); // adjust zoom if you like
@@ -1291,6 +1313,13 @@
           if (sysid === selectedSysid) {
             updateTelemetryPanelFor(sysid);
           }
+          if (msg.armed !== undefined) {
+             arm_bool = msg.armed;
+             if (arm_bool)
+                 document.querySelector(".plate").classList.add("on");
+             else
+                 document.querySelector(".plate").classList.remove("on");
+         }
         }
 
 
@@ -1403,9 +1432,9 @@
     let sw = L.latLng(17.0429, 77.4817);
     let ne = L.latLng(17.6429, 79.4017);
     let bounds = L.latLngBounds(sw, ne);
-    const home = L.latLng(17.2429, 78.4817);
+    const home = L.latLng(17.2425620, 78.4810656);
     let map = L.map('map', {
-      center: L.latLng(17.2429, 78.4817),
+      center: L.latLng(home),
       zoomControl: false,
       zoom: 17
     });
@@ -1569,6 +1598,19 @@
       segProgress = 0;
       lastSimTs = null;
 
+      totalSegments = routePoints.length - 1;
+      missionActive = true;
+
+      // update telemetry UI mode
+      const selectedSysid = parseInt(document.getElementById("teleDroneSelect").value || defaultSysid, 10);
+
+      if (!telemetryBySysid[selectedSysid])
+          telemetryBySysid[selectedSysid] = {};
+
+      telemetryBySysid[selectedSysid].mode = "AUTO";
+      telemetryBySysid[selectedSysid].uiStatus = "MISSION";
+      updateTelemetryPanelFor(selectedSysid);
+
       // Reset trail polyline for the drone so it follows the route freshly
       if (droneTrails[defaultSysid]) {
         map.removeLayer(droneTrails[defaultSysid]);
@@ -1643,12 +1685,52 @@
           updateDroneOnMap(defaultSysid, lat, lng);
         }
       }
+      // ===== mission progress calculation =====
+      if (missionActive && totalSegments > 0) {
+
+        const overallProgress =
+          ((segIndex + segProgress) / totalSegments) * 100;
+
+        const selectedSysid = parseInt(
+          document.getElementById("teleDroneSelect").value || defaultSysid,
+          10
+        );
+
+        if (!telemetryBySysid[selectedSysid])
+            telemetryBySysid[selectedSysid] = {};
+
+        telemetryBySysid[selectedSysid].wpCurrent = segIndex;
+        telemetryBySysid[selectedSysid].wpTotal = totalSegments;
+        telemetryBySysid[selectedSysid].missionProgress = overallProgress;
+
+        updateTelemetryPanelFor(selectedSysid);
+      }
 
       if (segIndex >= routePoints.length - 1) {
-        console.log("✅ Simulation finished all waypoints");
+        console.log("Simulation finished all waypoints");
+
         stopSimulation();
-        // remove trail now that mission finished (so the trail disappears on completion)
         clearTrail(defaultSysid);
+
+        missionActive = false;
+
+        const selectedSysid = parseInt(document.getElementById("teleDroneSelect").value || defaultSysid, 10);
+
+        if (!telemetryBySysid[selectedSysid])
+            telemetryBySysid[selectedSysid] = {};
+
+        telemetryBySysid[selectedSysid].mode = "STANDBY";
+        telemetryBySysid[selectedSysid].uiStatus = "READY";
+        telemetryBySysid[selectedSysid].missionProgress = 100;
+        updateTelemetryPanelFor(selectedSysid);
+
+        // auto disarm (your existing logic)
+        if (arm_bool) {
+          arm_bool = false;
+          document.querySelector(".plate").classList.remove("on");
+          sendCommand("DISARM");
+        }
+
         return;
       }
 
@@ -1663,7 +1745,7 @@
         if (t) {
           map.removeLayer(t);
           delete droneTrails[sysid];
-          console.log(`🧹 Cleared trail for sysid ${sysid}`);
+          console.log(`Cleared trail for sysid ${sysid}`);
         }
       } catch (e) {
         console.warn("clearTrail failed", e);
@@ -2057,10 +2139,28 @@
     );
 
     // "Dispatch" now = mark as dispatched + run simulation (no real upload)
-    document.getElementById('dispatch').addEventListener('click', () =>{
+    document.getElementById('dispatch').addEventListener('click', () => {
+      /*if (!arm_bool) {
+        console.log("Auto arming before dispatch...");
+        arm_bool = true;
+        document.getElementsByClassName("plate")[0].classList.add("on");
+        sendCommand("ARM");
+      }*/
+      if (!arm_bool) {
+         sendCommand("ARM");
+         arm_bool = true;
+         document.getElementsByClassName("plate")[0].classList.add("on");
+         setTimeout(() => {
+             saveMission('dispatched', { simulate: true });
+         }, 5000);  // wait 3 sec
+      }
+
+      // start mission
       saveMission('dispatched', { simulate: true });
+      setText("tele_mode", "AUTO");
       panelLeft.classList.remove('active');
     });
+
 
     async function saveMission(statusOverride, options = {}) {
       const missionName = document.getElementById('missionName')?.value || "Untitled Mission";
@@ -2140,15 +2240,31 @@
     // ======================= FPV OPEN / CLOSE =========================
 
     async function openFPV() {
-      console.log("starting")
+      console.log("starting");
       const fpv = document.getElementById("fpv");
+      const video = document.getElementById("fpvVideo");
 
+      // start backend ffmpeg
+     // await fetch("/api/fpv/start", { method: "POST" });
+
+      // show window
       fpv.style.display = "flex";
       fpv.style.visibility = "visible";
       fpv.style.top = "80px";
       fpv.style.left = "80px";
 
-      startWebRTC();
+      // load HLS
+      const url = "/hls/stream.m3u8";
+      if (Hls.isSupported()) {
+        window.hls = new Hls();
+        hls.loadSource(url);
+        hls.attachMedia(video);
+      } else {
+        video.src = url;
+      }
+        var loading = document.getElementById("fpvLoading");
+        loading.style.display = "none";
+      //startWebRTC();
     }
 
     async function closeFPV() {
@@ -2388,6 +2504,8 @@
 
   async function startWebRTC() {
     const video = document.getElementById("fpvVideo");
+
+
     const loading = document.getElementById("fpvLoading");
     fpvPc = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -2397,16 +2515,24 @@
     fpvPc.addTransceiver("video", { direction: "recvonly" });
 
     fpvPc.ontrack = (e) => {
+      console.log("TRACK RECEIVED", e);
+      console.log(video.readyState, video.videoWidth, video.videoHeight);
+      const loading = document.getElementById("fpvLoading");
 
       video.srcObject = e.streams[0];
 
-      video.onloadeddata = () => {
-        loading.style.display = "none";
-        video.play();
+      video.onloadedmetadata = () => {
+        console.log("VIDEO METADATA LOADED");
+        video.play()
+          .then(() => {
+            console.log("VIDEO PLAYING");
+            loading.style.display = "none";
+          })
+          .catch(err => {
+            console.error("VIDEO PLAY FAILED", err);
+          });
       };
     };
-
-
 
 
 

@@ -17,16 +17,12 @@ from fastapi.staticfiles import StaticFiles
 import websockets
 
 from pymavlink import mavutil
-
-from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
-from aiortc.contrib.media import MediaPlayer
-from aiortc.rtcrtpsender import RTCRtpSender
+from pymavlink.dialects.v20 import ardupilotmega as mavlink2
 
 # ------------------------
 # VIDEO / RTSP CONFIG
 # ------------------------
-# RTSP_URL = "rtsp://192.168.144.26:8554/main.264"
-RTSP_URL = "rtsp://rtspstream:POB-48SOLYWIPDJE5uX4v@zephyr.rtsp.stream/people"
+RTSP_URL = "rtsp://192.168.144.26:8554/main.264"
 HLS_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "hls")
 HLS_PLAYLIST = os.path.join(HLS_OUTPUT_DIR, "stream.m3u8")
 
@@ -55,9 +51,9 @@ mav_master: Optional[mavutil.mavlink_connection] = None
 mavlink_lock = asyncio.Lock()
 
 # MAVLink link status
-last_mavlink_rx_ms: int = 0    # timestamp (ms) of last MAVLink packet
-mavlink_msg_count: int = 0     # total number of MAVLink packets seen
-MAVLINK_TIMEOUT_MS = 5000      # consider "disconnected" if no packet in 5s
+last_mavlink_rx_ms: int = 0  # timestamp (ms) of last MAVLink packet
+mavlink_msg_count: int = 0  # total number of MAVLink packets seen
+MAVLINK_TIMEOUT_MS = 5000  # consider "disconnected" if no packet in 5s
 
 # ------------------------
 # GIMBAL STATE (deg)
@@ -65,16 +61,14 @@ MAVLINK_TIMEOUT_MS = 5000      # consider "disconnected" if no packet in 5s
 gimbal_pitch_deg = 0.0
 gimbal_yaw_deg = 0.0
 
-GIMBAL_PITCH_MIN = -90.0   # look straight down
-GIMBAL_PITCH_MAX = 30.0    # slight up
+GIMBAL_PITCH_MIN = -90.0  # look straight down
+GIMBAL_PITCH_MAX = 30.0  # slight up
 GIMBAL_YAW_MIN = -180.0
 GIMBAL_YAW_MAX = 180.0
 
-GIMBAL_COMP_ID = 1       # MAV_COMP_ID_AUTOPILOT (FC); gimbal manager handled there
+GIMBAL_COMP_ID = 1  # MAV_COMP_ID_AUTOPILOT (FC); gimbal manager handled there
 MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW = 1000
 
-#for rstp video
-pcs = set()
 ffmpeg_proc = None
 ffmpeg_running = False
 ffmpeg_thread = None
@@ -97,7 +91,7 @@ if os.path.isdir(FRONTEND_DIR):
 app.mount("/hls", StaticFiles(directory=HLS_OUTPUT_DIR), name="hls")
 
 # IP / port of the IPC on the AMR:
-IPC_WS_URL = "ws://192.168.144.50:8765"   # change to your AMR IPC IP
+IPC_WS_URL = "ws://192.168.144.50:8765"  # change to your AMR IPC IP
 
 # ---------- STATE ----------
 stations: Dict[str, Any] = {}
@@ -179,7 +173,7 @@ def get_server_ip() -> str:
     candidates = []
 
     for res in socket.getaddrinfo(
-        None, 0, family=socket.AF_INET, type=socket.SOCK_DGRAM
+            None, 0, family=socket.AF_INET, type=socket.SOCK_DGRAM
     ):
         _, _, _, _, sockaddr = res
         ip = sockaddr[0]
@@ -226,10 +220,10 @@ def init_mavlink():
 # COMMAND_LONG (PYMAVLINK)
 # ------------------------
 async def send_command_long_pymav(
-    target_sysid: int,
-    target_compid: int,
-    command: int,
-    params: list[float] | None = None,
+        target_sysid: int,
+        target_compid: int,
+        command: int,
+        params: list[float] | None = None,
 ):
     global mav_master
 
@@ -324,7 +318,7 @@ async def mavlink_reader_task():
         t["receivedAt"] = now_ms
 
         if mtype == "HEARTBEAT":
-            t["mode"] = msg.custom_mode
+            t["mode"] = "AUTO"
             t["baseMode"] = msg.base_mode
             t["systemStatus"] = msg.system_status
             t["armed"] = bool(msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED)
@@ -517,22 +511,22 @@ async def handle_command_from_ui(message: Dict[str, Any]) -> None:
         # --- 1) Classic DO_MOUNT_CONTROL style (many ArduPilot setups) ---
         mount_params = [
             gimbal_pitch_deg,  # param1: pitch (deg)
-            0.0,               # param2: roll
-            gimbal_yaw_deg,    # param3: yaw (deg)
+            0.0,  # param2: roll
+            gimbal_yaw_deg,  # param3: yaw (deg)
             0.0, 0.0, 0.0,
-            2.0,               # param7: MAV_MOUNT_MODE_MAVLINK_TARGETING
+            2.0,  # param7: MAV_MOUNT_MODE_MAVLINK_TARGETING
         ]
         # send_command_long_pymav(target_sys_id, 1, MAV_CMD_DO_MOUNT_CONTROL, mount_params)
 
         # --- 2) New Gimbal Manager style (MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW) ---
         gm_params = [
             gimbal_pitch_deg,  # param1: pitch (deg)
-            gimbal_yaw_deg,    # param2: yaw (deg)
-            0.0,               # param3: pitch_rate (deg/s)
-            0.0,               # param4: yaw_rate (deg/s)
-            0.0,               # param5: flags (0 = body frame)
-            0.0,               # param6: reserved
-            0.0,               # param7: gimbal instance id (0 for only gimbal)
+            gimbal_yaw_deg,  # param2: yaw (deg)
+            0.0,  # param3: pitch_rate (deg/s)
+            0.0,  # param4: yaw_rate (deg/s)
+            0.0,  # param5: flags (0 = body frame)
+            0.0,  # param6: reserved
+            0.0,  # param7: gimbal instance id (0 for only gimbal)
         ]
         await send_command_long_pymav(target_sys_id, 1, MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, gm_params)
 
@@ -567,10 +561,10 @@ async def handle_command_from_ui(message: Dict[str, Any]) -> None:
                 })
             )"""
         await broadcast_uav({
-                    "type": "mission_ack",
-                    "status": "sent",
-                    "missionName": mission.get("missionName", "Untitled"),
-                })
+            "type": "mission_ack",
+            "status": "sent",
+            "missionName": mission.get("missionName", "Untitled"),
+        })
 
     elif cmd == "ARM":
         params = [1, 0, 0, 0, 0, 0, 0]  # arm
@@ -584,7 +578,7 @@ async def handle_command_from_ui(message: Dict[str, Any]) -> None:
 
     elif cmd == "DISARM":
         print("I am here")
-        params = [0, 21196, 0, 0, 0, 0, 0] # arm
+        params = [0, 21196, 0, 0, 0, 0, 0]  # arm
         await send_command_long_pymav(
             target_sys_id,
             1,
@@ -595,9 +589,10 @@ async def handle_command_from_ui(message: Dict[str, Any]) -> None:
     else:
         print("Unknown command from UI:", cmd)
 
+
 """
 def arm_disarm(master, target_sysid: Optional[int] = None, arm: bool = True, timeout_s: float = 5.0):
-    
+
     Send MAV_CMD_COMPONENT_ARM_DISARM to target_sysid (or choose a default).
     Blocks waiting for COMMAND_ACK (up to timeout_s).
     Returns a dict {ok: bool, result: int, text: str}
@@ -761,7 +756,7 @@ async def login(body: Dict[str, Any]):
     return JSONResponse({"error": "Invalid credentials"}, status_code=401)
 
 
-@app.post("/api/test-mavlink")      # for testing
+@app.post("/api/test-mavlink")  # for testing
 async def test_mavlink(sysid: Optional[int] = None):
     """
     Fire a harmless MAVLink COMMAND_LONG (REQUEST_MESSAGE for GLOBAL_POSITION_INT)
@@ -794,7 +789,7 @@ async def test_mavlink(sysid: Optional[int] = None):
     # 3) Build params for MAV_CMD_REQUEST_MESSAGE
     params = [
         float(GLOBAL_POSITION_INT_ID),  # param1: message id
-        1.0,                            # param2: request ON (1) or OFF (0)
+        1.0,  # param2: request ON (1) or OFF (0)
         0.0, 0.0, 0.0, 0.0, 0.0
     ]
 
@@ -1019,64 +1014,6 @@ async def websocket_endpoint(ws: WebSocket):
         print("WebSocket client disconnected")
     finally:
         uav_clients.discard(ws)
-
-
-@app.websocket("/ws/mk32_webrtc")
-async def mk32_webrtc(ws: WebSocket):
-    await ws.accept()
-
-    pc = RTCPeerConnection()
-    pcs.add(pc)
-
-    player = MediaPlayer(
-        RTSP_URL,
-        format="rtsp",
-        options={
-            "rtsp_transport": "tcp",
-            "fflags": "nobuffer",
-            "flags": "low_delay",
-            "analyzeduration": "0",
-            "probesize": "32",
-            "max_delay": "0",
-            "video_codec": "h264",
-        }
-    )
-
-    pc.addTrack(player.video)
-
-    @pc.on("icecandidate")
-    async def on_ice(c):
-        if c:
-            await ws.send_text(json.dumps({
-                "type": "ice",
-                "candidate": {
-                    "candidate": c.candidate,
-                    "sdpMid": c.sdpMid,
-                    "sdpMLineIndex": c.sdpMLineIndex
-                }
-            }))
-
-    try:
-        async for raw in ws.iter_text():
-            msg = json.loads(raw)
-
-            if msg["type"] == "offer":
-                await pc.setRemoteDescription(
-                    RTCSessionDescription(msg["sdp"], "offer")
-                )
-                answer = await pc.createAnswer()
-                await pc.setLocalDescription(answer)
-
-                await ws.send_text(json.dumps({
-                    "type": "answer",
-                    "sdp": pc.localDescription.sdp
-                }))
-
-            elif msg["type"] == "ice":
-                await pc.addIceCandidate(msg["candidate"])
-
-    except WebSocketDisconnect:
-        pass
 
 
 current_amr_pose: Dict[str, Any] = {}
