@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>UGV Command Center</title>
+
+<style>
+
+    :root{
+    --bg:#0f1724;
+    --panel:rgba(12,18,28,0.9);
+    --muted:#94a3b8;
+    --accent:#2355ab;
+    --glass: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.06);
+    --text:#e6eef6;
+    --shadow: 0 8px 30px rgba(2,6,23,0.6);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  :root.light{
+    --bg:#f3f4f6;
+    --panel:#ffffff;
+    --muted:#475569;
+    --accent:#0ea5a4;
+    --glass: rgba(2,6,23,0.03);
+    --border: rgba(2,6,23,0.06);
+    --text:#0f1724;
+    --shadow: 0 10px 30px rgba(2,6,23,0.08);
+  }
+
+  html,body {height:100%;margin:0;background:var(--bg);color:var(--text);overflow:hidden}
+  .app {height:100vh;display:flex;flex-direction:column}
+    /* Top bar */
+  .topbar{
+    height:50px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:10px 18px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+    box-shadow:var(--shadow);
+    border-bottom:1px solid var(--border);
+    z-index:20;
+    position:relative
+  }
+  .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:1px}
+  .brand .logo{height:80px;padding:0px 0px;border-radius:6px;color:rgb(165, 164, 196);font-weight:700}
+  .top-actions{display:flex;align-items:center;gap:10px}
+  .btn{
+    background:var(--panel);
+    border:1px solid var(--border);
+    padding:8px 10px;
+    border-radius:8px;
+    color:var(--text);
+    cursor:pointer;
+    backdrop-filter: blur(6px);
+    position:relative;
+    z-index:20;
+    font-size:13px
+  }
+  .btn.ghost{background:transparent}
+  .btn.primary{background:linear-gradient(90deg,var(--accent),#3b82f6);color:white;border:none}
+  .btn.danger{background:#b91c1c;color:white;border:none}
+  .btn.small{padding:4px 8px;font-size:12px}
+
+    /* ===== BASE ===== */
+
+    body{
+        margin:0;
+        font-family:Arial, sans-serif;
+        background:#0b1220;
+        color:#fff;
+    }
+
+    .container{
+        display:flex;
+        flex-direction:column;
+        height:100vh;
+    }
+
+    /* ===== STATUS BAR ===== */
+
+    .statusBar{
+        height:8%;
+        background:#111827;
+        display:flex;
+        align-items:center;
+        justify-content:space-around;
+    }
+    /* ===== TELEMETRY ===== */
+
+    .telemetry{
+        height:8%;
+        background:#111827;
+        display:flex;
+        justify-content:space-around;
+        align-items:center;
+    }
+
+    /* ===== MAIN SPLIT ===== */
+
+    .main{
+        flex:1;
+        display:flex;
+    }
+
+    /* ===== MAP ===== */
+
+    .mapPanel{
+        position:relative;
+        width:50%;
+        background:linear-gradient(145deg,#2a2f36,#1c1f24);
+        border-right:2px solid #3a3f46;
+    }
+
+    .mapPanel::before,
+    .videoPanel::before{
+        position:absolute;
+        top:0;
+        left:0;
+        width:100%;
+        height:30px;
+
+        background:rgba(0,0,0,0.6);
+        font-size:14px;
+        display:flex;
+        align-items:center;
+        padding-left:10px;
+        z-index:2;
+    }
+
+    .mapPanel::before{
+        content:"MAP";
+    }
+
+    .videoPanel::before{
+        content:"VIDEO";
+    }
+
+    #mapCanvas{
+        width:100%;
+        height:100%;
+        background:#000;
+    }
+
+    /* ===== VIDEO ===== */
+
+    .videoPanel{
+        position:relative;
+        width:50%;
+        background:linear-gradient(145deg,#1a1d21,#0f1114);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        box-shadow: inset 10px 0 20px rgba(0,0,0,0.6);
+    }
+
+    #videoFeed{
+        width:100%;
+        height:100%;
+        object-fit:contain;
+    }
+
+    /* ===== MAP OVERLAY (JOYSTICK + SPEED) ===== */
+
+    .mapControls{
+        position:absolute;
+
+        bottom:20px;
+        right:20px;
+
+        z-index:10;   /* ← ensures it's above canvas */
+
+        display:flex;
+        flex-direction:column;
+        align-items:flex-end;
+        gap:15px;
+    }
+
+    /* JOYSTICK BASE */
+
+    #joystick-base{
+        width:180px;
+        height:180px;
+        border-radius:50%;
+        position:relative;
+
+        display:flex;
+        align-items:center;
+        justify-content:center;
+
+        background:radial-gradient(circle,#2f343c,#14171a);
+
+        border:2px solid #4b5563;   /* ← THIS FIXES VISIBILITY */
+
+        box-shadow:
+            inset 0 0 30px rgba(0,0,0,0.9),
+            0 10px 25px rgba(0,0,0,0.7);
+    }
+
+    #joystick-base::after{
+        content:"";
+        position:absolute;
+        width:120px;
+        height:120px;
+        border-radius:50%;
+
+        border:1px dashed rgba(255,255,255,0.15);  /* subtle guide ring */
+    }
+
+    /* JOYSTICK KNOB */
+
+    #joystick-knob{
+        width:70px;
+        height:70px;
+        border-radius:50%;
+
+        position:absolute;
+        top:50%;
+        left:50%;
+        transform:translate(-50%, -50%);
+
+        background:radial-gradient(circle,#6b7280,#1f2937);
+
+        border:1px solid #9ca3af;   /* subtle edge */
+
+        box-shadow:
+            0 6px 12px rgba(0,0,0,0.8),
+            inset 0 2px 6px rgba(255,255,255,0.2);
+
+        cursor:pointer;
+    }
+
+    #joystick-knob:active{
+        box-shadow:
+            0 0 20px rgba(59,130,246,0.7),
+            inset 0 2px 5px rgba(255,255,255,0.2);
+    }
+    /* TOGGLE BUTTON */
+
+    #controlToggle{
+        position:fixed;
+        right:10px;
+        bottom:50%;
+
+        width:40px;
+        height:40px;
+
+        border:none;
+        border-radius:8px;
+
+        background:#1f2937;
+        color:white;
+        font-size:20px;
+
+        cursor:pointer;
+        z-index:20;
+    }
+
+    /* DRAWER PANEL */
+
+    #controlDrawer{
+        position:fixed;
+        right:-40%;   /* hidden */
+        bottom:30px;    /* anchor near bottom */
+        width:auto;
+        height:auto;    /* ← key change */
+        background:transparent;
+        border-radius:12px;   /* floating card look */
+        box-shadow:none;
+        transition:right 0.3s ease;
+        z-index:15;
+        padding:20px;
+        display:flex;
+        justify-content:center;
+        backdrop-filter:none;          /* keeps it readable */
+        -webkit-backdrop-filter:blur(8px);
+        border:none;
+    }
+
+    /* OPEN STATE */
+
+    #controlDrawer.open{
+        right:30px;
+    }
+
+    /* CONTENT */
+
+    .drawerContent{
+        display:flex;
+        align-items:flex-start;
+        gap:20px;
+    }
+
+    .stationList{
+        width:45%;
+        max-height:250px;
+        overflow-y:auto;
+        background:rgba(0,0,0,0.4);
+        border-radius:8px;
+        padding:10px;
+    }
+
+    .stationList h4{
+        margin:0 0 10px 0;
+        font-size:14px;
+        color:#9ca3af;
+    }
+
+    /* STATION ITEM */
+    .stationItem{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        padding:6px;
+        margin-bottom:6px;
+        background:#1f2937;
+        border-radius:6px;
+    }
+    .deleteBtn{
+        background:none;
+        border:none;
+        color:#ef4444;
+        cursor:pointer;
+        font-size:14px;
+    }
+    .stationItem:hover{
+        background:#3b82f6;
+    }
+    .deleteBtn:hover{
+        color:#dc2626;
+    }
+
+    /* RIGHT SIDE */
+    .controlsRight{
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        gap:15px;
+    }
+
+    /* SPEED */
+
+    .speedOverlay{
+        width:180px;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        gap:6px;
+    }
+
+    input[type="range"]::-webkit-slider-thumb{
+        background:#3b82f6;
+    }
+    /* ===== VIDEO OVERLAY (E-STOP) ===== */
+
+    .videoOverlay{
+        position:absolute;
+        top:35px;
+        right:20px;
+    }
+
+    /* E-STOP BUTTON */
+
+    #estop-button{
+        width:60px;
+        height:60px;
+        border-radius:50%;
+        border:none;
+        font-weight:bold;
+        font-size:14px;
+        color:white;
+        background:radial-gradient(circle,#ff3b3b,#7f0000);
+
+        box-shadow:
+            0 0 12px rgba(255,255,255,0.6),
+            0 8px 15px rgba(0,0,0,0.8),
+            inset 0 4px 6px rgba(255,255,255,0.3),
+            inset 0 -6px 10px rgba(0,0,0,0.7);
+
+        cursor:pointer;
+        transition:0.15s;
+    }
+
+    #estop-button:active{
+        transform:translateY(4px) scale(0.97);
+    }
+
+    .stationItem.active{
+        background:#10b981; /* main goal */
+    }
+
+    .stationItem.selected{
+        background:#f59e0b; /* waypoints */
+    }
+
+    .ugv-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: Arial, sans-serif;
+    }
+
+    .ugv-table th {
+      background: #111827;
+      color: #fff;
+      padding: 6px;
+      font-size: 13px;
+    }
+
+    .ugv-table td {
+      background: #333;
+      color: #ddd;
+      padding: 6px;
+      text-align: center;
+    }
+
+    .ugv-table tr:nth-child(even) td {
+      background: #151f33;
+    }
+
+    .stationItem.goal {
+        background: #10b981;   /* green */
+    }
+
+    .stationItem.waypoint {
+        background: #f59e0b;   /* yellow */
+    }
+    .iconBtn{
+        width: 30px;
+        height: 30px;
+        border: none;
+        border-radius: 8px;
+        background: #1f2937;
+        color: white;
+        font-size: 15px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .iconBtn:hover{
+        background: #374151;
+    }
+
+    /* Optional color differentiation */
+    #startMission{
+        background: #10b981;   /* green */
+    }
+
+    #startMission:hover{
+        background: #059669;
+    }
+
+    #clearMission{
+        background: #ef4444;   /* red */
+    }
+
+    #clearMission:hover{
+        background: #dc2626;
+    }
+    .controlActions{
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: center;
+        margin-top: 10px;
+    }
+
+    #notifContainer{
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 9999;
+    }
+
+    .toast{
+        background: #1f2937;
+        color: #fff;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        min-width: 180px;
+        opacity: 0;
+        transform: translateX(20px);
+        transition: all 0.3s ease;
+    }
+
+    .toast.show{
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    /* Variants */
+    .toast.success { background: #10b981; }
+    .toast.error { background: #ef4444; }
+    .toast.info { background: #3b82f6; }
+    .toast.warn { background: #f59e0b; }
+</style>
+</head>
+
+
+<body>
+
+<div class="container">
+    <div class="topbar">
+        <div class="brand">
+          <div class="logo">
+            <img src="./static/arlogowithrvmt.png" height="100%"/>
+          </div>
+          <div style="line-height:1; padding-top: 8px;">
+            <div style="font-size:25px">UGV CONTROL</div>
+            <!--<div style="font-size:18px;color:var(&#45;&#45;muted)">Stations & Navigation</div>-->
+          </div>
+        </div>
+
+        <div class="top-actions">
+            <div id="notifContainer"></div>
+            <button class="btn ghost" id="themeToggle">🌙</button>
+          <!--<button class="btn primary" onclick="location.href='/uav-cc'">UAV</button>-->
+        </div>
+    </div>
+<!-- MAIN AREA -->
+
+<div class="main">
+
+<!-- MAP -->
+
+<div class="mapPanel">
+
+    <canvas id="mapCanvas"></canvas>
+
+</div>
+
+
+<div class="videoPanel">
+
+    <video id="videoFeed" autoplay muted playsinline></video>
+
+    <!-- FLOATING E-STOP -->
+    <div class="videoOverlay">
+        <div class="estop-wrapper">
+
+            <div class="safety-plate">
+
+                <button id="estop-button">
+                    <span class="label">STOP</span>
+                </button>
+
+            </div>
+    </div>
+
+</div>
+
+
+</div>
+
+</div>
+
+
+    <!-- STATUS BAR -->
+
+    <!--<div class="statusBar">-->
+        <table class="ugv-table">
+          <tr>
+            <th>Robot</th>
+            <th>Status</th>
+            <th>Battery</th>
+            <th>Mode</th>
+            <th>Signal</th>
+            <th>Speed</th>
+            <th>Heading</th>
+            <th>Motor Temp</th>
+            <th>Latency</th>
+          </tr>
+          <tr>
+            <td>UGV-01</td>
+            <td>Connected</td>
+            <td>82%</td>
+            <td>Manual</td>
+            <td>Strong</td>
+            <td>1.2 m/s</td>
+            <td>124°</td>
+            <td>43°C</td>
+            <td>32 ms</td>
+          </tr>
+        </table>
+    <!--</div>-->
+
+</div>
+
+<!-- TOGGLE BUTTON -->
+<button id="controlToggle">☰</button>
+
+<!-- SLIDE PANEL -->
+<div id="controlDrawer">
+
+    <div class="drawerContent">
+
+        <div class="stationList" id="stationList">
+            <h4>Stations</h4>
+            <div id="stationsContainer"></div>
+            <div class="controlActions">
+                <button id="startMission" class="iconBtn" title="Start">▶</button>
+                <button id="clearMission" class="iconBtn" title="Clear">X</button>
+                <button id="cancelMission" class="iconBtn" title="Cancel Mission">⏹</button>
+            </div>
+            <!--<button id="clearMission">Clear</button>-->
+        </div>
+        <div class="controlsRight">
+            <!-- JOYSTICK -->
+            <div id="joystick-base">
+                <div id="joystick-knob"></div>
+            </div>
+
+            <!-- SPEED -->
+            <div class="speed">
+                <label>Speed</label>
+                <input id="speed_range" type="range" min="0" max="1" step="0.5" value="0">
+                <p id="val"></p>
+                <script>
+                    let realSpeed = 0.15
+
+                    const slider = document.getElementById("speed_range")
+                    const output = document.getElementById("val")
+
+                    output.innerText = realSpeed
+
+                    slider.addEventListener("input", () => {
+
+                        let val = parseFloat(slider.value)
+
+                        if (val === 0) realSpeed = 0.15
+                        else realSpeed = val
+
+                        output.innerText = realSpeed
+
+                    })
+                </script>
+            </div>
+        </div>
+    </div>
+
+</div>
+<script type="text/javascript" src="./static/libs/ugvjs.js"></script>
+</body>
+</html>

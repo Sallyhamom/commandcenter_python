@@ -1,0 +1,17 @@
+<svg class="ugv-icon" width="40" height="40" viewBox="0 0 64 64"  xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer outline (visibility on any map) -->
+  <rect x="18" y="16" width="28" height="32" rx="6"
+        fill="#4CAF50" stroke="#000" stroke-width="2"/>
+
+  <!-- Wheels (side hints) -->
+  <rect x="12" y="18" width="6" height="10" rx="2" fill="#222"/>
+  <rect x="12" y="36" width="6" height="10" rx="2" fill="#222"/>
+  <rect x="46" y="18" width="6" height="10" rx="2" fill="#222"/>
+  <rect x="46" y="36" width="6" height="10" rx="2" fill="#222"/>
+
+  <!-- FRONT (very important for orientation) -->
+  <polygon points="32,10 40,20 24,20" fill="#ffffff"/>
+
+  <!-- Center (optional sensor/pose reference) -->
+  <circle cx="32" cy="32" r="2" fill="#000"/>
+</svg>
