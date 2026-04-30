@@ -10,7 +10,13 @@ function init(){
     let isMoving = false
     let orderedWaypoints = []
     setInterval(() => {
-        sendCommand(lastLinear, lastAngular)
+
+        if (dragging) {
+            sendCommand(lastLinear, lastAngular)
+        } else {
+            sendCommand(0, 0)
+        }
+
     }, 100)
 
     const stationStates = new Map();
@@ -703,9 +709,23 @@ function init(){
         knob.style.top = (50 + (dy/baseRadius)*50) + "%"
         knob.style.transform = "translate(-50%, -50%)"
 
-        sendCommand(-dy/baseRadius, dx/baseRadius)
-        lastLinear = -dy / baseRadius
-        lastAngular = dx / baseRadius
+        //sendCommand(-dy/baseRadius, dx/baseRadius)
+        let linear  = -dy / baseRadius
+        let angular =  dx / baseRadius
+
+        // Flip lower half (when joystick is below center)
+        if (dy > 0) {
+            linear  = -linear
+            angular = -angular
+        }
+
+        // optional deadzone
+        const deadzone = 0.05
+        if (Math.abs(linear) < deadzone) linear = 0
+        if (Math.abs(angular) < deadzone) angular = 0
+
+        lastLinear = linear
+        lastAngular = angular
         isMoving = true
     }
     function start(){
