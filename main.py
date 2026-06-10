@@ -13,6 +13,8 @@ import mavlink_service as mav
 import ipc_service as ipc
 import video_service as video
 from mqtt_ws_bridge import MQTTWebSocketBridge
+from pydantic import BaseModel
+from fastapi import Body
 
 
 app = FastAPI()
@@ -20,11 +22,30 @@ app = FastAPI()
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "mission-control-frontend")
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/hls", StaticFiles(directory=video.HLS_OUTPUT_DIR), name="hls")
 
 
-bridge = MQTTWebSocketBridge(
+# =========================================================
+# MODELS
+# =========================================================
+
+class Waypoint(BaseModel):
+    x: float
+    y: float
+    yaw: float
+
+
+class FavoriteMission(BaseModel):
+
+    name: str
+
+    stations: List[str]
+
+    waypoints: List[Waypoint]
+
+
+"""bridge = MQTTWebSocketBridge(
     broker="192.168.1.3",
     topics=[
         "/api/map",
@@ -34,8 +55,8 @@ bridge = MQTTWebSocketBridge(
         "/api/map_response",
         "/api/station/list"
     ]
-)
-
+)"""
+bridge = None
 TOPIC_MAP = {
     "cmd_vel": "/api/cmd_vel",
     "estop": "/api/estop",
@@ -48,6 +69,7 @@ TOPIC_MAP = {
 
 
 STATION_FILE = "stations.json"
+FAVORITES_FILE = os.path.join(BASE_DIR, "favorites.json")
 
 
 # ---------- helpers ----------
@@ -65,9 +87,43 @@ def load_stations():
     return []
 
 
+def load_favorites():
+
+    if not os.path.exists(FAVORITES_FILE):
+
+        return []
+
+    try:
+
+        with open(
+            FAVORITES_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            content = f.read().strip()
+
+            if not content:
+                return []
+
+            return json.loads(content)
+
+    except Exception as e:
+
+        print("LOAD FAVORITES ERROR:", e)
+
+        return []
+
+
 def save_stations(stations):
     with open(STATION_FILE, "w") as f:
         json.dump(stations, f, indent=2)
+
+
+def save_favorites(data):
+    print(FAVORITES_FILE)
+    with open(FAVORITES_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
 
 def get_current_user(request: Request):
@@ -98,6 +154,7 @@ def get_server_ip() -> str:
 
     return "127.0.0.1"
 
+
 # ---------- STARTUP ----------
 @app.on_event("startup")
 async def startup():
@@ -107,7 +164,7 @@ async def startup():
     asyncio.create_task(mav.keepalive_task())
     asyncio.create_task(ipc.ipc_connector())"""
     loop = asyncio.get_running_loop()
-    bridge.start(loop)
+    #bridge.start(loop)
 
 
 # ---------- UAV WS ----------
@@ -152,25 +209,45 @@ async def amr_ws(ws: WebSocket):
         ipc.amr_clients.discard(ws)
 
 
+mqtt_ws_clients = set()
+
+
 @app.websocket("/ws/mqtt_ugv")
 async def mqtt_ws(ws: WebSocket):
+
+    global bridge
+
     await ws.accept()
-    await bridge.register(ws)
+
+    mqtt_ws_clients.add(ws)
+
+    # register immediately if bridge exists
+    if bridge:
+        await bridge.register(ws)
 
     print("MQTT WS client connected")
+
     try:
+
         while True:
+
             data = await ws.receive_text()
+
             msg = json.loads(data)
 
             msg_type = msg.get("type")
 
-            # -------- ROUTE TO MQTT --------
+            if bridge is None:
+                continue
+
             if msg_type in TOPIC_MAP:
+
                 topic = TOPIC_MAP[msg_type]
 
-                # remove "type" before sending
-                payload = {k: v for k, v in msg.items() if k != "type"}
+                payload = {
+                    k: v for k, v in msg.items()
+                    if k != "type"
+                }
 
                 bridge.mqtt_client.publish(
                     topic,
@@ -178,14 +255,19 @@ async def mqtt_ws(ws: WebSocket):
                 )
 
     except WebSocketDisconnect:
-        print("️MQTT client disconnected")
+
+        print("MQTT client disconnected")
 
     except Exception as e:
+
         print("WS error:", e)
 
     finally:
-        print("MQTT WS client disconnected")
-        await bridge.unregister(ws)
+
+        mqtt_ws_clients.discard(ws)
+
+        if bridge:
+            await bridge.unregister(ws)
 
 
 # ------------------------
@@ -304,6 +386,17 @@ def get_stations():
     return {"stations": stations}
 
 
+@app.get("/api/favorites")
+def get_favorites():
+    favorites = load_favorites()
+
+    # ensure it's always a list
+    if isinstance(favorites, dict):
+        favorites = list(favorites.values())
+
+    return {"favorites": favorites}
+
+
 # ---------- ADD ----------
 @app.get("/stations/add")
 def add_station(name: str, x: float, y: float, theta: float):
@@ -337,3 +430,151 @@ def delete_station(name: str):
     save_stations(stations)
 
     return {"status": "deleted"}
+
+
+@app.post("/favorites/add")
+def add_favorite(data: dict = Body(...)):
+
+    favorites = load_favorites()
+
+    name = data["name"]
+
+    # prevent duplicates
+    if any(f["name"] == name for f in favorites):
+
+        return {
+            "status": "exists"
+        }
+
+    favorites.append({
+
+        "name": name,
+
+        "stations":
+            data.get("stations", []),
+
+        "waypoints":
+            data.get("waypoints", [])
+    })
+    print(favorites)
+    save_favorites(favorites)
+
+    print("FAVORITE SAVED")
+
+    return {
+        "status": "added"
+    }
+
+
+# ---------- DELETE ----------
+@app.delete("/favorites/delete")
+def delete_favorite(name: str):
+
+    favorites = load_favorites()
+
+    favorites = [
+        f for f in favorites
+        if f["name"] != name
+    ]
+
+    save_favorites(favorites)
+
+    return {
+        "status": "deleted"
+    }
+
+
+@app.post("/api/set-broker")
+async def set_broker(body: Dict[str, Any]):
+
+    global bridge
+
+    ip = body.get("ip")
+
+    if not ip:
+
+        return {
+            "ok": False,
+            "error": "No IP"
+        }
+
+    try:
+
+        # stop old bridge
+        if bridge:
+            bridge.stop()
+
+    except Exception as e:
+
+        print("Bridge stop error:", e)
+
+    # create new bridge
+    bridge = MQTTWebSocketBridge(
+
+        broker=ip,
+
+        topics=[
+            "/api/map",
+            "/api/map_response",
+            "/api/odom",
+            "/api/job/feedback",
+            "/api/job/result",
+            "/api/station/list"
+        ]
+    )
+
+    loop = asyncio.get_running_loop()
+
+    bridge.start(loop)
+
+    # register existing websocket clients
+    for client in mqtt_ws_clients:
+
+        try:
+
+            await bridge.register(client)
+
+            print("WS client registered")
+
+        except Exception as e:
+
+            print("Register error:", e)
+
+    return {
+        "ok": True,
+        "broker": ip
+    }
+
+
+@app.delete("/favorites/delete/{fav_id}")
+def delete_favorite(fav_id: str):
+
+    favorites = load_favorites()
+
+    # find item
+    item = next(
+        (f for f in favorites if f["id"] == fav_id),
+        None
+    )
+
+    if item is None:
+
+        return {
+            "status": "not_found"
+        }
+
+    # remove
+    favorites = [
+        f for f in favorites
+        if f["id"] != fav_id
+    ]
+
+    save_favorites(favorites)
+
+    return {
+
+        "status": "deleted",
+
+        "favorite": item
+    }
+

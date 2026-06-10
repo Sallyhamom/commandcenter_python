@@ -1,0 +1,2187 @@
+
+/* =========================================================
+   ROOT
+========================================================= */
+
+:root{
+
+    --bg:#050816;
+    --panel:#0b1220;
+    --glass:rgba(15,23,42,0.82);
+
+    --border:rgba(255,255,255,0.06);
+
+    --blue:#2563eb;
+    --green:#10b981;
+    --yellow:#facc15;
+    --red:#ef4444;
+    --white:#e5e7eb;
+
+    --shadow:
+        0 20px 40px rgba(0,0,0,0.45);
+
+    --glow-blue:
+        0 0 25px rgba(37,99,235,0.45);
+
+    --glow-red:
+        0 0 22px rgba(239,68,68,0.55);
+}
+
+/* =========================================================
+   BODY
+========================================================= */
+
+*{
+    box-sizing:border-box;
+}
+
+body{
+
+    margin:0;
+
+    overflow:hidden;
+
+    font-family:'Inter',sans-serif;
+
+    background:
+        radial-gradient(circle at top,
+        #13203a 0%,
+        #060b14 45%,
+        #02040a 100%);
+
+    color:white;
+}
+
+/* =========================================================
+   APP
+========================================================= */
+
+.app{
+
+    width:100vw;
+    height:100vh;
+
+    padding:14px;
+
+    display:flex;
+    flex-direction:column;
+
+    gap:14px;
+}
+
+/* =========================================================
+   GLASS
+========================================================= */
+
+.glass{
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(17,25,40,0.82),
+        rgba(7,10,18,0.88)
+        );
+
+    backdrop-filter:blur(18px);
+
+    border:1px solid rgba(255,255,255,0.06);
+
+    box-shadow:
+        0 20px 40px rgba(0,0,0,0.45),
+        inset 0 1px 1px rgba(255,255,255,0.04);
+
+    border-radius:24px;
+}
+
+/* =========================================================
+   TOPBAR
+========================================================= */
+
+.topbar{
+
+    height:120px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 10px;
+}
+
+.brand .logo{height:80px;padding:0px 0px;border-radius:6px;color:rgb(165, 164, 196);font-weight:700}
+/* =========================================================
+   BRAND
+========================================================= */
+
+.brand{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:22px;
+}
+
+/* =========================================================
+   LOGO IMAGE
+========================================================= */
+
+.brandImage{
+
+    width:240px;
+
+    height:auto;
+
+    object-fit:contain;
+
+    filter:
+        drop-shadow(0 0 12px rgba(255,255,255,0.08));
+
+    flex-shrink:0;
+}
+/* =========================================================
+   CONTENT
+========================================================= */
+
+.brandContent{
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:center;
+}
+/* =========================================================
+   TEXT
+========================================================= */
+
+.brandText{
+
+    display:flex;
+
+    flex-direction:column;
+}
+
+/* =========================================================
+   TITLE
+========================================================= */
+
+.brandTitle{
+
+    font-family:'Orbitron',sans-serif;
+
+    font-size:30px;
+
+    font-weight:700;
+
+    letter-spacing:2px;
+
+    color:white;
+
+    line-height:1;
+}
+
+/* =========================================================
+   SUBTITLE
+========================================================= */
+
+.brandSub{
+
+    margin-top:10px;
+
+    font-size:14px;
+
+    font-weight:500;
+
+    letter-spacing:1px;
+
+    color:#94a3b8;
+}
+/* =========================================================
+   TELEMETRY
+========================================================= */
+
+.telemetry{
+
+    display:flex;
+    align-items:center;
+    gap:18px;
+}
+
+.telemetryCard{
+
+    min-width:120px;
+
+    padding:14px 18px;
+
+    border-radius:18px;
+
+    background:rgba(255,255,255,0.03);
+
+    border:1px solid rgba(255,255,255,0.04);
+}
+
+.telemetryLabel{
+
+    font-size:11px;
+
+    color:#94a3b8;
+
+    letter-spacing:1px;
+}
+
+.telemetryValue{
+
+    margin-top:6px;
+
+    font-size:15px;
+
+    font-weight:700;
+
+    font-family:'Orbitron',sans-serif;
+}
+
+.green{
+    color:var(--green);
+}
+
+.blue{
+    color:#60a5fa;
+}
+
+.yellow{
+    color:var(--yellow);
+}
+
+/* =========================================================
+   MAIN
+========================================================= */
+
+.main{
+
+    flex:1;
+
+    display:grid;
+
+    grid-template-columns:
+        1fr
+        1fr;
+
+    gap:18px;
+
+    min-height:0;
+
+    height:calc(100vh - 120px);
+}
+/* =========================================================
+   MAP + VIDEO
+========================================================= */
+
+.mapPanel,
+.videoPanel{
+
+    position:relative;
+
+    height:100%;
+
+    min-height:0;
+
+    border-radius:28px;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(17,25,40,0.82),
+        rgba(7,10,18,0.88)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.05);
+
+    box-shadow:
+        0 10px 24px rgba(0,0,0,0.3);
+}
+
+.mapGrid{
+
+    position:absolute;
+    inset:0;
+
+    background:
+        linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+
+    background-size:40px 40px;
+}
+
+.mapHeader{
+
+    position:absolute;
+
+    top:18px;
+    left:20px;
+
+    z-index:10;
+
+    font-family:'Orbitron',sans-serif;
+
+    letter-spacing:2px;
+}
+
+.ugvDot{
+
+    position:absolute;
+
+    width:22px;
+    height:22px;
+
+    background:#2563eb;
+
+    border-radius:50%;
+
+    top:50%;
+    left:50%;
+
+    transform:translate(-50%,-50%);
+
+    box-shadow:
+        0 0 30px rgba(37,99,235,0.9);
+}
+
+/* =========================================================
+   VIDEO PANEL
+========================================================= */
+
+.videoPanel video{
+
+    width:100%;
+    height:100%;
+
+    object-fit:cover;
+}
+
+.videoOverlay{
+
+    position:absolute;
+
+    top:20px;
+    left:20px;
+
+    display:flex;
+    align-items:center;
+
+    gap:10px;
+
+    z-index:10;
+}
+
+.liveDot{
+
+    width:12px;
+    height:12px;
+
+    background:#2563eb;
+
+    border-radius:50%;
+
+    animation:pulse 1.2s infinite;
+}
+
+.videoLabel{
+
+    font-family:'Orbitron',sans-serif;
+
+    letter-spacing:2px;
+}
+
+/* =========================================================
+   LIGHT DOCK
+========================================================= */
+
+.lightDock{
+
+    position:absolute;
+
+    top:50%;
+
+    right:20px;
+
+    transform:translateY(-50%);
+
+    display:flex;
+    flex-direction:column;
+
+    align-items:center;
+
+    gap:14px;
+
+    padding:18px 12px;
+
+    border-radius:28px;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(17,25,40,0.94),
+        rgba(5,10,18,0.98)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.06);
+
+    backdrop-filter:blur(18px);
+
+    box-shadow:
+        0 18px 40px rgba(0,0,0,0.42);
+
+    z-index:40;
+}
+
+.lightControl{
+
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+
+    gap:10px;
+}
+
+/* =========================================================
+   LIGHT BUTTONS
+========================================================= */
+
+.lightCircle{
+
+    width:38px;
+    height:38px;
+
+    border-radius:50%;
+
+    border:none;
+
+    color:white;
+
+    font-size:22px;
+
+    cursor:pointer;
+
+    background:
+        radial-gradient(circle at top,
+        #1f2a44,
+        #0f172a);
+
+    box-shadow:
+        0 6px 16px rgba(0,0,0,0.35);
+
+    transition:0.2s ease;
+}
+
+.lightCircle:hover{
+
+    transform:translateY(-2px) scale(1.04);
+}
+
+.lightState{
+
+    font-size:11px;
+
+    padding:4px 10px;
+
+    border-radius:999px;
+
+    background:rgba(255,255,255,0.06);
+
+    color:#9ca3af;
+}
+
+.lightCircle.active.front{
+
+    background:
+        radial-gradient(circle,
+        #fde68a,
+        #facc15);
+
+    color:#111827;
+
+    box-shadow:
+        0 0 30px rgba(250,204,21,0.8);
+}
+
+.lightCircle.active.rear{
+
+    background:
+        radial-gradient(circle,
+        #93c5fd,
+        #2563eb);
+
+    box-shadow:
+        0 0 30px rgba(37,99,235,0.8);
+}
+
+.lightCircle.active.fog{
+
+    background:
+        radial-gradient(circle,
+        #86efac,
+        #16a34a);
+
+    box-shadow:
+        0 0 30px rgba(22,163,74,0.8);
+}
+
+/* =========================================================
+   PANEL TITLES
+========================================================= */
+
+.panelTitle{
+
+    font-family:'Orbitron',sans-serif;
+
+    font-size:12px;
+
+    letter-spacing:2px;
+
+    color:#cbd5e1;
+
+    margin-bottom:14px;
+}
+
+.panelTitle.center{
+
+    text-align:center;
+}
+
+/* E-STOP BUTTON */
+
+    #estop-button{
+        width:60px;
+        height:60px;
+        border-radius:50%;
+        border:none;
+        font-weight:bold;
+        font-size:14px;
+        color:white;
+        background:radial-gradient(circle,#ff3b3b,#7f0000);
+
+        box-shadow:
+            0 0 12px rgba(255,255,255,0.6),
+            0 8px 15px rgba(0,0,0,0.8),
+            inset 0 4px 6px rgba(255,255,255,0.3),
+            inset 0 -6px 10px rgba(0,0,0,0.7);
+
+        cursor:pointer;
+        transition:0.15s;
+    }
+
+    #estop-button:active{
+        transform:translateY(4px) scale(0.97);
+    }
+
+/* =========================================================
+   ANIMATIONS
+========================================================= */
+
+@keyframes pulse{
+
+    0%{
+        opacity:0.4;
+    }
+
+    50%{
+        opacity:1;
+    }
+
+    100%{
+        opacity:0.4;
+    }
+}
+
+@keyframes redPulse{
+
+    0%{
+        box-shadow:
+            0 0 18px rgba(239,68,68,0.4);
+    }
+
+    50%{
+        box-shadow:
+            0 0 36px rgba(239,68,68,0.95);
+    }
+
+    100%{
+        box-shadow:
+            0 0 18px rgba(239,68,68,0.4);
+    }
+}
+/* =========================================================
+   TOGGLE BUTTON
+========================================================= */
+
+#controlToggle{
+
+    position:absolute;
+
+    top:45%;
+
+    right:-35px;
+
+    transform:translateY(-50%);
+
+    width:35px;
+    height:50px;
+
+    border:none;
+
+    border-radius:0 18px 18px 0;
+
+    cursor:pointer;
+
+    z-index:90;
+
+    color:white !important;
+
+    font-size:22px;
+    text-shadow:
+        0 0 10px rgba(255,255,255,0.35);
+    background:
+        linear-gradient(
+        180deg,
+        rgba(51,65,85,0.98),
+        rgba(30,41,59,1)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.06);
+
+    box-shadow:
+        0 10px 24px rgba(0,0,0,0.4);
+
+    backdrop-filter:blur(14px);
+
+    transition:0.22s ease;
+}
+
+#controlToggle:hover{
+
+    box-shadow:
+        0 0 20px rgba(37,99,235,0.25);
+}
+
+/* =========================================================
+   CONTROL DRAWER
+========================================================= */
+
+#controlDrawer{
+
+    position:absolute;
+
+    bottom:24px;
+    left:8px;
+
+    width:820px;
+    height:220px;
+
+    padding:20px;
+
+    display:flex;
+
+    align-items:stretch;
+
+    gap:20px;
+
+    z-index:70;
+
+    border-radius:30px;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(17,25,40,0.72),
+        rgba(5,10,18,0.82)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.06);
+
+    backdrop-filter:blur(22px);
+
+    box-shadow:
+        0 24px 50px rgba(0,0,0,0.5);
+
+    transform:
+        translateX(calc(-100% + 2px));
+
+    transition:
+        transform 0.25s ease;
+}
+
+#controlDrawer.open{
+
+    transform:
+        translateX(0);
+}
+
+/* =========================================================
+   TABS
+========================================================= */
+
+.drawerTabsVertical{
+
+    width:64px;
+
+    display:flex;
+    flex-direction:column;
+
+    gap:12px;
+
+    align-items:center;
+
+    padding-top:8px;
+}
+
+/* =========================================================
+   TAB BUTTON
+========================================================= */
+
+.drawerTabVertical{
+
+    width:48px;
+    height:48px;
+
+    border:none;
+
+    border-radius:16px;
+
+    cursor:pointer;
+
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
+    font-size:20px;
+
+    color:#94a3b8;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(255,255,255,0.03),
+        rgba(255,255,255,0.015)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.05);
+
+    transition:0.2s ease;
+}
+
+/* HOVER */
+
+.drawerTabVertical:hover{
+
+    transform:
+        translateY(-2px);
+
+    border-color:
+        rgba(37,99,235,0.35);
+
+    box-shadow:
+        0 0 18px rgba(37,99,235,0.14);
+}
+
+/* ACTIVE */
+
+.drawerTabVertical.active{
+
+    color:white;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(37,99,235,0.24),
+        rgba(37,99,235,0.08)
+        );
+
+    border-color:
+        rgba(37,99,235,0.45);
+
+    box-shadow:
+        0 0 20px rgba(37,99,235,0.22);
+}
+
+.drawerTabVertical.active{
+
+    color:white;
+
+    border-color:
+        rgba(37,99,235,0.4);
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(37,99,235,0.18),
+        rgba(37,99,235,0.05)
+        );
+
+    box-shadow:
+        0 0 20px rgba(37,99,235,0.18);
+}
+
+/* =========================================================
+   STATIONS AREA
+========================================================= */
+
+.drawerStations{
+
+    width:240px;
+
+    display:flex;
+    flex-direction:column;
+
+    overflow:hidden;
+}
+/* =========================================================
+   LEFT
+========================================================= */
+
+.drawerLeft{
+
+    width:260px;
+
+    display:flex;
+    flex-direction:column;
+
+    overflow:hidden;
+}
+
+/* =========================================================
+   RIGHT
+========================================================= */
+
+.drawerRight{
+
+    flex:1;
+
+    min-width:220px;
+
+    display:flex;
+    flex-direction:column;
+
+    align-items:center;
+    justify-content:center;
+
+    padding-left:22px;
+}
+
+/* =========================================================
+   DRAWER TABS
+========================================================= */
+
+.drawerTabs{
+
+    display:flex;
+
+    gap:10px;
+
+    margin-bottom:16px;
+}
+
+/* TAB */
+
+.drawerTab{
+
+    height:38px;
+
+    padding:0 18px;
+
+    border:none;
+
+    border-radius:12px;
+
+    cursor:pointer;
+
+    color:#94a3b8;
+
+    font-size:12px;
+
+    font-family:'Orbitron',sans-serif;
+
+    letter-spacing:1px;
+
+    background:
+        rgba(255,255,255,0.03);
+
+    border:
+        1px solid rgba(255,255,255,0.05);
+
+    transition:0.18s ease;
+}
+
+/* ACTIVE */
+
+.drawerTab.active{
+
+    color:white;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(37,99,235,0.22),
+        rgba(37,99,235,0.08)
+        );
+
+    border-color:
+        rgba(37,99,235,0.4);
+
+    box-shadow:
+        0 0 18px rgba(37,99,235,0.18);
+}
+
+/* =========================================================
+   VIEWS
+========================================================= */
+
+.drawerView{
+
+    flex:1;
+
+    display:flex;
+
+    flex-direction:column;
+
+    overflow:hidden;
+}
+
+.hidden{
+
+    display:none !important;
+}
+
+/* =========================================================
+   FAVORITES
+========================================================= */
+
+#favoritesContainer{
+
+    flex:1;
+
+    overflow-y:auto;
+
+    display:flex;
+
+    flex-direction:column;
+
+    gap:12px;
+
+    padding-right:4px;
+}
+
+/* =========================================================
+   STATIONS HEADER
+========================================================= */
+
+.stationsHeader{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    gap:10px;
+
+    margin-bottom:12px;
+}
+
+
+/* =========================================================
+   ACTIONS
+========================================================= */
+
+.missionActions{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    gap:10px;
+
+    margin-top:16px;
+}
+/* =========================================================
+   MINI STATIONS
+========================================================= */
+
+.miniStations{
+
+    display:flex;
+    flex-direction:column;
+
+    gap:10px;
+}
+
+.miniStation{
+
+    height:42px;
+
+    display:flex;
+    align-items:center;
+
+    gap:10px;
+
+    padding:0 14px;
+
+    border-radius:14px;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(255,255,255,0.04),
+        rgba(255,255,255,0.02)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.04);
+
+    transition:0.2s ease;
+
+    cursor:pointer;
+
+    font-size:13px;
+
+    font-weight:500;
+}
+
+.miniStation:hover{
+
+    transform:translateX(4px);
+
+    border-color:
+        rgba(37,99,235,0.45);
+
+    box-shadow:
+        0 0 18px rgba(37,99,235,0.16);
+}
+
+/* ACTIVE */
+
+.miniStation.active{
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(16,185,129,0.18),
+        rgba(16,185,129,0.05)
+        );
+
+    border-color:
+        rgba(16,185,129,0.45);
+
+    box-shadow:
+        0 0 18px rgba(16,185,129,0.18);
+}
+
+/* DOT */
+
+.stationDot{
+
+    width:9px;
+    height:9px;
+
+    border-radius:50%;
+
+    background:#3b82f6;
+
+    box-shadow:
+        0 0 10px rgba(59,130,246,0.7);
+}
+
+
+/* =========================================================
+   MISSION BUTTONS
+========================================================= */
+
+.missionBtn{
+
+    width:36px;
+    height:36px;
+    border:none;
+    border-radius:14px;
+    cursor:pointer;
+    color:white;
+    font-size:20px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(30,41,59,0.96),
+        rgba(15,23,42,0.98)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.05);
+
+    box-shadow:
+        0 8px 18px rgba(0,0,0,0.32);
+
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        border-color 0.18s ease;
+}
+
+/* HOVER */
+
+.missionBtn:hover{
+
+    transform:
+        translateY(-2px)
+        scale(1.05);
+
+    border-color:
+        rgba(255,255,255,0.12);
+
+    box-shadow:
+        0 0 18px rgba(37,99,235,0.16),
+        0 10px 20px rgba(0,0,0,0.34);
+}
+
+/* ACTIVE PRESS */
+
+.missionBtn:active{
+
+    transform:
+        scale(0.96);
+}
+
+/* =========================================================
+   BUTTON COLORS
+========================================================= */
+
+.missionBtn.add{
+
+    color:#60a5fa;
+}
+
+.missionBtn.start{
+
+    color:#10b981;
+}
+
+.missionBtn.stop{
+
+    color:#ef4444;
+}
+
+.missionBtn.clear{
+
+    color:#facc15;
+}
+/* =========================================================
+   JOYSTICK
+========================================================= */
+
+.joystick{
+
+    width:160px;
+    height:160px;
+
+    border-radius:50%;
+
+    position:relative;
+
+    background:
+        radial-gradient(circle,
+        #0f172a,
+        #020617);
+
+    border:
+        1px solid rgba(255,255,255,0.04);
+
+    box-shadow:
+        inset 0 0 40px rgba(0,0,0,0.95),
+        0 0 28px rgba(37,99,235,0.16);
+}
+
+.joystickGlow{
+
+    position:absolute;
+
+    inset:-8px;
+
+    border-radius:50%;
+
+    background:
+        radial-gradient(circle,
+        rgba(37,99,235,0.18),
+        transparent 72%);
+
+    filter:blur(12px);
+}
+
+.joystick::after{
+
+    content:"";
+
+    position:absolute;
+
+    inset:20px;
+
+    border-radius:50%;
+
+    border:
+        1px dashed rgba(255,255,255,0.05);
+}
+
+.knob{
+
+    position:absolute;
+
+    width:56px;
+    height:56px;
+
+    border-radius:50%;
+
+    top:50%;
+    left:50%;
+
+    transform:translate(-50%,-50%);
+
+    background:
+        radial-gradient(circle at top,
+        #4b5563,
+        #111827);
+
+    border:
+        1px solid rgba(255,255,255,0.06);
+
+    box-shadow:
+        0 5px 12px rgba(0,0,0,0.5),
+        inset 0 2px 4px rgba(255,255,255,0.05);
+}
+
+/* =========================================================
+   MAP CANVAS
+========================================================= */
+
+#mapCanvas{
+
+    position:absolute;
+
+    inset:0;
+
+    width:100%;
+    height:100%;
+}
+
+/* =========================================================
+   STATIONS CONTAINER
+========================================================= */
+
+#stationsContainer,
+#favoritesContainer{
+
+    flex:1;
+
+    overflow-y:auto;
+
+    display:flex;
+
+    flex-direction:column;
+
+    gap:12px;
+
+    padding-right:4px;
+}
+/* =========================================================
+   ACTIONS
+========================================================= */
+
+.drawerActions{
+
+    width:90px;
+
+    display:flex;
+    flex-direction:column;
+
+    justify-content:center;
+
+    gap:8px;
+}
+
+/* =========================================================
+   ACTION BUTTON
+========================================================= */
+
+.actionBtn{
+
+    height:68px;
+
+    border:none;
+
+    border-radius:16px;
+
+    cursor:pointer;
+
+    display:flex;
+    flex-direction:column;
+
+    align-items:center;
+    justify-content:center;
+
+    gap:2px;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(30,41,59,0.96),
+        rgba(15,23,42,0.98)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.05);
+
+    transition:0.2s ease;
+}
+
+.actionBtn:hover{
+
+    transform:
+        translateY(-2px);
+
+    box-shadow:
+        0 0 20px rgba(37,99,235,0.16);
+}
+
+.actionIcon{
+
+    font-size:16px;
+}
+
+.actionLabel{
+
+    font-size:8px;
+
+    letter-spacing:1px;
+    color:white;
+    font-family:'Orbitron',sans-serif;
+}
+
+.actionBtn.add .actionIcon{
+    color:#60a5fa;
+}
+
+.actionBtn.start .actionIcon{
+    color:#10b981;
+}
+
+.actionBtn.stop .actionIcon{
+    color:#ef4444;
+}
+
+.actionBtn.clear .actionIcon{
+    color:#facc15;
+}
+
+/* =========================================================
+   DRIVE
+========================================================= */
+
+.drawerDrive{
+
+    flex:1;
+
+    display:flex;
+    flex-direction:column;
+
+    align-items:center;
+    justify-content:center;
+
+    border-left:
+        1px solid rgba(255,255,255,0.05);
+
+    padding-left:20px;
+}
+/* =========================================================
+   STATION ITEM
+========================================================= */
+
+.stationItem{
+
+    position:relative;
+    min-height:40px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 14px 0 18px;
+    border-radius:16px;
+    cursor:pointer;
+    overflow:hidden;
+    background:
+        linear-gradient(
+        180deg,
+        rgba(255,255,255,0.045),
+        rgba(255,255,255,0.02)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.05);
+
+    backdrop-filter:blur(10px);
+
+    transition:
+        transform 0.18s ease,
+        border-color 0.18s ease,
+        box-shadow 0.18s ease;
+
+    box-shadow:
+        0 8px 20px rgba(0,0,0,0.22);
+}
+
+/* LEFT BLUE GLOW BAR */
+
+.stationItem::before{
+
+    content:"";
+
+    position:absolute;
+
+    left:0;
+    top:0;
+    bottom:0;
+
+    width:3px;
+
+    background:#3b82f6;
+
+    box-shadow:
+        0 0 12px rgba(59,130,246,0.8);
+}
+
+/* HOVER */
+
+.stationItem:hover{
+
+    transform:
+        translateX(4px);
+
+    border-color:
+        rgba(37,99,235,0.4);
+
+    box-shadow:
+        0 0 24px rgba(37,99,235,0.16),
+        0 10px 24px rgba(0,0,0,0.25);
+}
+
+/* ACTIVE */
+
+.stationItem.active, .favoriteCard.selected{
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(16,185,129,0.18),
+        rgba(16,185,129,0.05)
+        );
+
+    border-color:
+        rgba(16,185,129,0.45);
+
+    box-shadow:
+        0 0 22px rgba(16,185,129,0.18),
+        0 10px 24px rgba(0,0,0,0.25);
+}
+
+/* ACTIVE GLOW BAR */
+
+.stationItem.active::before, .favoriteCard.active::before{
+
+    background:#10b981;
+
+    box-shadow:
+        0 0 14px rgba(16,185,129,0.9);
+}
+
+/* =========================================================
+   STATION NAME
+========================================================= */
+
+.stationItem span{
+
+    font-size:14px;
+
+    font-weight:600;
+
+    color:#e5e7eb;
+
+    letter-spacing:0.3px;
+}
+
+/* =========================================================
+   DELETE BUTTON
+========================================================= */
+
+.deleteBtn, .favDelete{
+
+    width:30px;
+    height:30px;
+
+    border:none;
+
+    border-radius:10px;
+
+    cursor:pointer;
+
+    flex-shrink:0;
+
+    font-size:13px;
+
+    background:
+        rgba(255,255,255,0.04);
+
+    color:#ef4444;
+
+    transition:0.18s ease;
+
+    backdrop-filter:blur(8px);
+}
+
+.deleteBtn:hover{
+
+    background:
+        rgba(239,68,68,0.16);
+
+    transform:
+        scale(1.08);
+}
+
+/* =========================================================
+   CUSTOM SCROLLBAR
+========================================================= */
+
+#stationsContainer::-webkit-scrollbar, #favoritesContainer::-webkit-scrollbar{
+
+    width:6px;
+}
+
+#stationsContainer::-webkit-scrollbar-thumb, #favoritesContainer::-webkit-scrollbar-thumb{
+
+    background:
+        rgba(255,255,255,0.12);
+
+    border-radius:999px;
+}
+.dialogOverlay{
+
+    position: fixed;
+
+    top: 0;
+    left: 0;
+
+    width: 100vw;
+    height: 100vh;
+
+    display: none;
+
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(0,0,0,0.55);
+
+    z-index: 999999;
+
+    backdrop-filter: blur(4px);
+}
+
+.dialogOverlay.show{
+    display:flex;
+}
+
+.dialogBox{
+
+    width: 340px;
+
+    background: #111827;
+
+    border: 1px solid #374151;
+
+    border-radius: 14px;
+
+    padding: 20px;
+
+    box-shadow:
+        0 20px 40px rgba(0,0,0,0.6);
+}
+
+.dialogTitle{
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+
+.dialogMessage{
+    margin-bottom: 14px;
+    color: #d1d5db;
+}
+
+.dialogInput{
+
+    width: 100%;
+
+    box-sizing: border-box;
+
+    padding: 12px;
+
+    border-radius: 8px;
+
+    border: 1px solid #374151;
+
+    background: #1f2937;
+
+    color: white;
+
+    font-size: 14px;
+
+    margin-bottom: 20px;
+}
+
+.dialogActions{
+
+    display:flex;
+
+    justify-content:flex-end;
+
+    gap:10px;
+}
+
+.dialogBtn{
+
+    border:none;
+
+    border-radius:8px;
+
+    padding:10px 16px;
+
+    cursor:pointer;
+
+    font-weight:600;
+}
+
+.dialogBtn.primary{
+    background:#2563eb;
+    color:white;
+}
+
+.dialogBtn.secondary{
+    background:#374151;
+    color:white;
+}
+#cameraFeed{
+
+    position:absolute;
+
+    inset:0;
+
+    width:100%;
+    height:100%;
+
+    border:none;
+
+    border-radius:28px;
+
+    overflow:hidden;
+
+    pointer-events:none;
+}
+
+.videoOverlay,
+.streamControls,
+.lightDock{
+
+    z-index:20;
+}
+/* =========================================================
+   FAVORITE CARD
+========================================================= */
+
+.favoriteCard{
+
+    position:relative;
+
+    min-height:72px;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    padding:0 16px;
+
+    border-radius:18px;
+
+    background:
+        linear-gradient(
+        180deg,
+        rgba(255,255,255,0.045),
+        rgba(255,255,255,0.02)
+        );
+
+    border:
+        1px solid rgba(255,255,255,0.05);
+
+    backdrop-filter:blur(10px);
+
+    overflow:hidden;
+
+    margin-bottom:12px;
+
+    transition:
+        0.18s ease;
+}
+
+/* LEFT GLOW */
+
+.favoriteCard::before{
+
+    content:"";
+
+    position:absolute;
+
+    left:0;
+    top:0;
+    bottom:0;
+
+    width:3px;
+
+    background:#facc15;
+
+    box-shadow:
+        0 0 12px rgba(250,204,21,0.7);
+}
+
+/* HOVER */
+
+.favoriteCard:hover{
+
+    transform:
+        translateX(4px);
+
+    border-color:
+        rgba(250,204,21,0.35);
+
+    box-shadow:
+        0 0 24px rgba(250,204,21,0.10);
+}
+
+/* =========================================================
+   INFO
+========================================================= */
+
+.favoriteInfo{
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:center;
+
+    gap:4px;
+}
+
+/* NAME */
+
+.favoriteName{
+
+    font-family:'Orbitron',sans-serif;
+
+    font-size:15px;
+
+    font-weight:700;
+
+    letter-spacing:1px;
+
+    color:white;
+
+    text-transform:uppercase;
+}
+
+/* META */
+
+.favoriteMeta{
+
+    font-size:10px;
+
+    letter-spacing:2px;
+
+    color:#94a3b8;
+
+    text-transform:uppercase;
+}
+
+/* =========================================================
+   CONTROLS
+========================================================= */
+
+.favoriteControls{
+
+    display:flex;
+
+    flex-direction:row;
+
+    align-items:center;
+
+    gap:10px;
+
+    margin-left:auto;
+}
+
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+.favAction{
+
+    width:34px;
+    height:34px;
+
+    border:none;
+
+    border-radius:12px;
+
+    cursor:pointer;
+
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
+    font-size:14px;
+
+    background:
+        rgba(255,255,255,0.04);
+
+    border:
+        1px solid rgba(255,255,255,0.04);
+
+    transition:
+        0.18s ease;
+}
+
+/* START */
+
+.favAction.start{
+
+    color:#10b981;
+}
+
+/* DELETE */
+
+.favAction.delete{
+
+    color:#ef4444;
+}
+
+.favAction.stop{
+    color:#ef4444;
+}
+
+.streamControls{
+
+    position:absolute;
+
+    bottom:24px;
+    right:24px;
+
+    display:flex;
+
+    align-items:center;
+
+    gap:10px;
+
+    z-index:80;
+}
+
+#ipcInput{
+
+    width:180px;
+
+    height:38px;
+
+    padding:0 12px;
+
+    border:none;
+
+    border-radius:12px;
+
+    outline:none;
+
+    background:
+        rgba(15,23,42,0.92);
+
+    color:white;
+
+    border:
+        1px solid rgba(255,255,255,0.08);
+
+    backdrop-filter:blur(10px);
+}
+
+#connectVideoBtn{
+
+    height:38px;
+
+    width:38px;
+
+    border:none;
+
+    border-radius:12px;
+
+    cursor:pointer;
+
+    color:white;
+
+    font-weight:600;
+
+    background:
+        linear-gradient(
+        180deg,
+        #2563eb,
+        #1d4ed8);
+
+    box-shadow:
+        0 6px 18px rgba(37,99,235,0.35);
+
+    transition:0.2s ease;
+    font-size:18px;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+#connectVideoBtn:hover{
+
+    transform:
+        translateY(-1px);
+
+    box-shadow:
+        0 0 20px rgba(37,99,235,0.4);
+}
+.stationsHeader{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    gap:10px;
+
+    margin-bottom:12px;
+}
+
+#stationFilter{
+
+    width:110px;
+
+    height:30px;
+
+    padding:0 10px;
+
+    border:none;
+
+    border-radius:10px;
+
+    outline:none;
+
+    font-size:12px;
+
+    color:white;
+
+    background:
+        rgba(255,255,255,0.05);
+
+    border:
+        1px solid rgba(255,255,255,0.06);
+
+    backdrop-filter:blur(10px);
+
+    transition:0.18s ease;
+}
+
+#stationFilter:focus{
+
+    border-color:
+        rgba(37,99,235,0.45);
+
+    box-shadow:
+        0 0 14px rgba(37,99,235,0.16);
+}
+
+#stationFilter::placeholder{
+
+    color:#94a3b8;
+}
+/* =========================================================
+   DRAWER VIEWS
+========================================================= */
+
+.drawerView{
+
+    display:flex;
+
+    flex-direction:column;
+
+    height:100%;
+
+    overflow:hidden;
+}
+
+/* HIDDEN */
+
+.hidden{
+
+    display:none !important;
+}
+/* =========================================================
+   FAVORITES VIEW
+========================================================= */
+
+#favoritesView{
+
+    flex:1;
+
+    overflow:hidden;
+}
+
+/* =========================================================
+   STATIONS VIEW
+========================================================= */
+
+#stationsView{
+
+    flex:1;
+
+    overflow:hidden;
+}
+/* =========================================================
+   FAVORITES CONTAINER
+========================================================= */
+
+#favoritesContainer{
+
+    flex:1;
+
+    overflow-y:auto;
+
+    padding-right:4px;
+}
+
+/* =========================================================
+   FAVORITES SEARCH
+========================================================= */
+
+#favoritesFilter{
+
+    width:110px;
+
+    height:30px;
+
+    padding:0 10px;
+
+    border:none;
+
+    border-radius:10px;
+
+    outline:none;
+
+    font-size:12px;
+
+    color:white;
+
+    background:
+        rgba(255,255,255,0.05);
+
+    border:
+        1px solid rgba(255,255,255,0.06);
+
+    backdrop-filter:blur(10px);
+
+    transition:0.18s ease;
+}
+
+#favoritesFilter:focus{
+
+    border-color:
+        rgba(37,99,235,0.45);
+
+    box-shadow:
+        0 0 14px rgba(37,99,235,0.16);
+}
+
+#favoritesFilter::placeholder{
+
+    color:#94a3b8;
+}
+
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+.favAction{
+    width:34px;
+    height:34px;
+    border:none;
+    border-radius:12px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:14px;
+
+    transition:
+        0.18s ease;
+
+    background:
+        rgba(255,255,255,0.04);
+
+    border:
+        1px solid rgba(255,255,255,0.04);
+}
+
+/* START */
+
+.favAction.start{
+
+    color:#10b981;
+}
+
+.favAction.start:hover{
+
+    background:
+        rgba(16,185,129,0.14);
+
+    box-shadow:
+        0 0 16px rgba(16,185,129,0.2);
+}
+
+/* DELETE */
+
+.favAction.delete{
+
+    color:#ef4444;
+}
+
+.favAction.delete:hover{
+
+    background:
+        rgba(239,68,68,0.14);
+
+    box-shadow:
+        0 0 16px rgba(239,68,68,0.2);
+}

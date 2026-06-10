@@ -1,0 +1,26 @@
+[
+  {
+    "name": "cccc",
+    "stations": [
+      "r",
+      "t"
+    ],
+    "waypoints": []
+  },
+  {
+    "name": "something new",
+    "stations": [
+      "r",
+      "2e"
+    ],
+    "waypoints": []
+  },
+  {
+    "name": "hhhh",
+    "stations": [
+      "r",
+      "ff"
+    ],
+    "waypoints": []
+  }
+]

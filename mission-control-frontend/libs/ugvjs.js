@@ -9,17 +9,18 @@ function init(){
     let lastAngular = 0
     let isMoving = false
     let orderedWaypoints = []
+    let addingStation, addingFavorite = false
     setInterval(() => {
 
         if (dragging) {
             sendCommand(lastLinear, lastAngular)
-        } else {
+        } /*else {
             sendCommand(0, 0)
-        }
+        }*/
 
-    }, 100)
+    }, 10)
 
-    const stationStates = new Map();
+    let videoConnected = false
     let localStations = []      // created on map
     let selectedStations = []   // multi-selection
     // ---------------- CANVAS ----------------
@@ -58,13 +59,37 @@ function init(){
             }))
         }
     }
+
+    const stationFilter =
+        document.getElementById("stationFilter")
+
+    stationFilter.oninput = () => {
+
+        renderStations()
+    }
     // ---------------- DRAWER ----------------
 
-    const toggleBtn = document.getElementById("controlToggle");
-    const drawer = document.getElementById("controlDrawer");
+    const controlDrawer =
+        document.getElementById("controlDrawer")
 
-    toggleBtn.onclick = () => {
-        drawer.classList.toggle("open")
+    const controlToggle =
+        document.getElementById("controlToggle")
+
+    let drawerOpen = false
+
+    controlToggle.onclick = () => {
+
+        drawerOpen = !drawerOpen
+
+        controlDrawer.classList.toggle(
+            "open",
+            drawerOpen
+        )
+
+        controlToggle.innerHTML =
+            drawerOpen
+                ? "❮"
+                : "❯"
     }
     // ---------------- ROBOT ----------------
     let selectedStation = null;
@@ -98,8 +123,9 @@ function init(){
     let lastOdom = null
 
     // RViz-like zoom (pixels per meter)
-    let pixelsPerMeter = 80
-
+    let pixelsPerMeter = 20
+    let cameraX = 0
+    let cameraY = 0
     // ---------------- WEBSOCKET ----------------
 
     const ws = new WebSocket(
@@ -110,24 +136,73 @@ function init(){
 
     ws.onopen = () => {
 
-        ws.send(JSON.stringify({
-            type: "map_request",
-            request: "get_map"
-        }))
+        const savedIP =
+        localStorage.getItem("brokerIP")
 
-        ws.send(JSON.stringify({
-            type: "station_list_request"
-        }))
+        if (savedIP){
+
+            connectBroker(savedIP)
+        }
     }
 
     ws.onmessage = (event) => {
 
         const msg = JSON.parse(event.data)
-
+        console.log("WS MSG:", msg.topic)
         if (msg.topic === "/api/map"){
             lastMap = msg.payload.map || msg.payload;
             buildMapCanvas();
-            drawScene();
+            if (cameraX === 0 && cameraY === 0) {
+
+                const scale =
+                    pixelsPerMeter *
+                    lastMap.info.resolution
+
+                const width =
+                    lastMap.info.width
+
+                const height =
+                    lastMap.info.height
+
+                const origin =
+                    lastMap.info.origin.position
+
+                // map center in ROS world coords
+                const centerWorldX =
+                    origin.x +
+                    (width * lastMap.info.resolution) / 2
+
+                const centerWorldY =
+                    origin.y +
+                    (height * lastMap.info.resolution) / 2
+
+                // convert world -> map pixels
+                const centerPixelX =
+                    (centerWorldX - origin.x) /
+                    lastMap.info.resolution
+
+                const centerPixelY =
+                    (centerWorldY - origin.y) /
+                    lastMap.info.resolution
+
+                // place center on screen center
+                cameraX =
+                    canvas.width / 2 -
+                    centerPixelX * scale
+
+                cameraY =
+                    canvas.height / 2 -
+                    (height - centerPixelY) * scale
+            }
+            requestAnimationFrame(() => {
+
+                drawScene()
+
+                // second frame helps large maps
+                requestAnimationFrame(() => {
+                    drawScene()
+                })
+            })
         }
 
         if (msg.topic === "/api/odom"){
@@ -184,14 +259,141 @@ function init(){
 
     // ---------------- ZOOM (VERY IMPORTANT) ----------------
 
+    /*canvas.addEventListener("wheel", (e) => {
+
+        e.preventDefault()
+
+        const mouseX = e.offsetX
+        const mouseY = e.offsetY
+
+        const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9
+
+        // world coords before zoom
+        const worldX = (mouseX - cameraX) / pixelsPerMeter
+        const worldY = (mouseY - cameraY) / pixelsPerMeter
+
+        pixelsPerMeter *= zoomFactor
+
+        // keep cursor fixed during zoom
+        cameraX = mouseX - worldX * pixelsPerMeter
+        cameraY = mouseY - worldY * pixelsPerMeter
+
+        drawScene()
+    });*/
+
+    // ================================
+    // PAN + NORMAL ZOOM
+    // ================================
+
+    let isPanning = false
+    let hasDragged = false
+
+    let panStartX = 0
+    let panStartY = 0
+
+    let startCameraX = 0
+    let startCameraY = 0
+
+    const DRAG_THRESHOLD = 5
+
+    // ---------------- PAN START ----------------
+
+    canvas.addEventListener("mousedown", (e) => {
+
+        if (addingStation) return
+
+        isPanning = true
+        hasDragged = false
+
+        panStartX = e.clientX
+        panStartY = e.clientY
+
+        startCameraX = cameraX
+        startCameraY = cameraY
+
+        canvas.style.cursor = "grabbing"
+    })
+
+    // ---------------- PAN MOVE ----------------
+
+    window.addEventListener("mousemove", (e) => {
+
+        if (!isPanning) return
+
+        const dx = e.clientX - panStartX
+        const dy = e.clientY - panStartY
+
+        // detect actual drag
+        if (
+            Math.abs(dx) > DRAG_THRESHOLD ||
+            Math.abs(dy) > DRAG_THRESHOLD
+        ) {
+            hasDragged = true
+        }
+
+        cameraX = startCameraX + dx
+        cameraY = startCameraY + dy
+
+        drawScene()
+    })
+
+    // ---------------- PAN END ----------------
+
+    window.addEventListener("mouseup", () => {
+
+        isPanning = false
+
+        canvas.style.cursor = "grab"
+
+        // small timeout prevents click firing immediately
+        setTimeout(() => {
+            hasDragged = false
+        }, 50)
+    })
+
+    // ---------------- ZOOM ----------------
+
     canvas.addEventListener("wheel", (e) => {
 
         e.preventDefault()
 
-        if (e.deltaY < 0) pixelsPerMeter *= 1.1
-        else pixelsPerMeter *= 0.9
+        const zoom =
+            e.deltaY < 0
+                ? 1.12
+                : 0.88
+
+        const mouseX = e.offsetX
+        const mouseY = e.offsetY
+
+        // position before zoom
+        const wx =
+            (mouseX - cameraX) /
+            pixelsPerMeter
+
+        const wy =
+            (mouseY - cameraY) /
+            pixelsPerMeter
+
+        pixelsPerMeter *= zoom
+
+        // LIMITS
+        pixelsPerMeter =
+            Math.max(
+                5,
+                Math.min(150, pixelsPerMeter)
+            )
+
+        // maintain cursor focus
+        cameraX =
+            mouseX - wx * pixelsPerMeter
+
+        cameraY =
+            mouseY - wy * pixelsPerMeter
 
         drawScene()
+    },
+    {
+        passive:false
     })
 
     /*// ---------------- TEST (NO ROS) ----------------
@@ -230,69 +432,48 @@ function init(){
             return
         }
 
-        const goalEntry = [...stationStates.entries()]
-            .find(([_, state]) => state === "goal")
+        const selectedGoalStations = selectedStations
+            .map(name => rosStations.find(s => s.name === name))
+            .filter(Boolean)
 
-        if (!goalEntry) {
-            console.warn("No goal selected")
+        if (selectedGoalStations.length === 0) {
+            console.warn("No stations selected")
             return
         }
 
-        const goalName = goalEntry[0]
+        const mapWaypoints = orderedWaypoints
+            .filter(w => w.type === "map")
+            .map(w => ({
+                x: w.x,
+                y: w.y,
+                theta: w.theta
+            }))
 
-        const allStations = rosStations   // backend now owns stations
-
-        const goalStation = allStations.find(s => s.name === goalName)
-
-        // station-based waypoints
-        const stationWaypoints = [...stationStates.entries()]
-            .filter(([_, state]) => state === "waypoint")
-            .map(([name]) => rosStations.find(s => s.name === name))
-            .filter(Boolean)
-
-        // merge both
-        const allWaypoints = orderedWaypoints.map(w => {
-
-            if (w.type === "map") {
-                return {
-                    x: w.x,
-                    y: w.y,
-                    theta: w.theta
-                }
-            }
-
-            if (w.type === "station") {
-                const s = rosStations.find(st => st.name === w.name)
-                if (!s) return null
-
-                return {
-                    x: s.x,
-                    y: s.y,
-                    theta: s.theta
-                }
-            }
-
-        }).filter(Boolean)
-
-        // BUILD PAYLOAD HERE
         const payload = {
-        type: "job_goal",
-        tasks: [
-            {
-                type: 1,
-                task_station: {
-                    station_name: goalStation.name,
-                    station_pose: {
-                        x: goalStation.x,
-                        y: goalStation.y,
-                        theta: goalStation.theta
-                    },
-                    waypoints: allWaypoints
-                }
-            }
-        ]
-    }
 
+            type: "job_goal",
+
+            tasks: [
+                {
+                    type: 1,
+
+                    task_station: {
+
+                        stations: selectedGoalStations.map(st => ({
+                            station_name: st.name,
+
+                            station_pose: {
+                                x: st.x,
+                                y: st.y,
+                                theta: st.theta
+                            }
+                        })),
+
+                        waypoints: mapWaypoints
+                    }
+                }
+            ]
+        }
         // lock UI
         jobActive = true
         startBtn.disabled = true
@@ -309,6 +490,9 @@ function init(){
 
     canvas.addEventListener("click", async (e) => {
 
+        // ignore click after dragging
+        if (hasDragged) return;
+
         if (!lastMap) return;
 
         const rect = canvas.getBoundingClientRect()
@@ -316,29 +500,35 @@ function init(){
         const screenX = e.clientX - rect.left
         const screenY = e.clientY - rect.top
 
-        const pose = screenToMap(canvas, screenX, screenY)
+        const pose = screenToMap(canvas, screenX, screenY);
 
-        //add stations
-        if (e.shiftKey) {
-            try {
-                const name = prompt("Station name:")
-                if (!name) return
+        if (addingStation) {
 
-                await fetch(`/stations/add?name=${name}&x=${pose.x}&y=${pose.y}&theta=${pose.theta}`)
+            addingStation = false
+            addStationBtn.style.background = ""
 
-                await loadStations()
+            openStationDialog(async (name) => {
 
-                drawScene()
+                try {
 
-                console.log("Station created:", name)
+                    await fetch(
+                        `/stations/add?name=${name}&x=${pose.x}&y=${pose.y}&theta=${pose.theta}`
+                    )
 
-            } catch (err) {
-                console.error("Station create failed:", err)
-            }
+                    await loadStations()
+
+                    drawScene()
+
+                    console.log("Station created:", name)
+
+                } catch (err) {
+
+                    console.error("Station create failed:", err)
+                }
+            })
 
             return
         }
-
 
         orderedWaypoints.push({
             type: "map",
@@ -355,12 +545,16 @@ function init(){
     document.getElementById("clearMission").onclick = () => {
 
         // get all selected (goal + waypoint)
-        const selectedNames = [...stationStates.keys()]
+        const selectedNames = [...selectedStations]
 
         if (selectedNames.length === 0) {
             console.warn("No stations selected")
             return
         }
+
+        const selectedGoals = selectedNames
+            .map(name => rosStations.find(s => s.name === name))
+            .filter(Boolean)
 
         // remove ONLY from localStations (not ROS)
         localStations = localStations.filter(
@@ -371,7 +565,7 @@ function init(){
         localStorage.setItem("localStations", JSON.stringify(localStations))
 
         // clear selection
-        stationStates.clear()
+        selectedStations = []
 
         // refresh UI
         renderStations([...rosStations, ...localStations])
@@ -420,18 +614,38 @@ function init(){
 
         for (let i = 0; i < lastMap.data.length; i++) {
 
-            let value = lastMap.data[i]
+            let value = Number(lastMap.data[i])
+
+            // ROS int8 fix
+            if (value === 255) value = -1
+
             let color = 255
 
-            if (value === 100) color = 0
-            else if (value === -1) color = 200
+            if (value >= 65) {
+                color = 0          // occupied
+            }
+            else if (value === -1) {
+                color = 180        // unknown
+            }
+            else {
+                color = 255        // free
+            }
 
-            image.data[i * 4] = color
+            image.data[i * 4]     = color
             image.data[i * 4 + 1] = color
             image.data[i * 4 + 2] = color
             image.data[i * 4 + 3] = 255
         }
-
+        console.log({
+            width: lastMap.info.width,
+            height: lastMap.info.height,
+            dataLength: lastMap.data.length,
+            first: lastMap.data[0],
+            sample: lastMap.data.slice(0, 20)
+        })
+        ctxTmp.imageSmoothingEnabled = false
+        ctx.webkitImageSmoothingEnabled = false
+        ctx.mozImageSmoothingEnabled = false
         ctxTmp.putImageData(image, 0, 0)
 
         mapCanvas = canvasTmp
@@ -441,24 +655,29 @@ function init(){
 
     function screenToMap(canvas, screenX, screenY){
 
+        if (!lastMap) return null
+
         const res = lastMap.info.resolution
 
         const scale = pixelsPerMeter * res
 
-        const width = lastMap.info.width
-        const height = lastMap.info.height
+        const origin = lastMap.info.origin.position
 
-        const mapWidthPx = width * scale
-        const mapHeightPx = height * scale
+        // remove camera offset
+        const localX = screenX - cameraX
+        const localY = screenY - cameraY
 
-        const offsetX = (canvas.width - mapWidthPx) / 2
-        const offsetY = (canvas.height - mapHeightPx) / 2
+        // undo scale
+        const mapPixelX = localX / scale
+        const mapPixelY =
+            lastMap.info.height - (localY / scale)
 
-        const mapPixelX = (screenX - offsetX) / scale
-        const mapPixelY = (mapHeightPx - (screenY - offsetY)) / scale
+        // convert map pixel -> world
+        const x =
+            mapPixelX * res + origin.x
 
-        const x = mapPixelX * res + lastMap.info.origin.position.x
-        const y = mapPixelY * res + lastMap.info.origin.position.y
+        const y =
+            mapPixelY * res + origin.y
 
         return { x, y, theta: 0 }
     }
@@ -470,15 +689,24 @@ function init(){
     }
 
     function renderStations(stations){
-
-         if (!Array.isArray(stations)) {
+        stations =
+            stations ||
+            [...rosStations, ...localStations]
+        if (!Array.isArray(stations)) {
             console.error("renderStations got invalid data:", stations)
             return
         }
         const container = document.getElementById("stationsContainer")
         container.innerHTML = ""
-
-        stations.forEach(station => {
+        const filterText =
+            stationFilter.value
+                .trim()
+                .toLowerCase()
+        stations.filter(st =>
+                st.name
+                    .toLowerCase()
+                    .includes(filterText)
+            ).forEach(station => {
 
             const div = document.createElement("div")
             div.className = "stationItem"
@@ -509,37 +737,29 @@ function init(){
 
             // existing click logic
             div.onclick = () => {
-                const current = stationStates.get(station.name)
 
-                if (!current) {
-                    for (let [k,v] of stationStates){
-                        if (v === "goal") stationStates.delete(k)
-                    }
-                    stationStates.set(station.name, "goal")
-                }
-                else if (current === "goal") {
+                const index =
+                    selectedStations.indexOf(station.name)
 
-                    stationStates.set(station.name, "waypoint")
+                if (index >= 0) {
 
-                    //ADD TO ORDERED LIST
-                    orderedWaypoints.push({
-                        type: "station",
-                        name: station.name
-                    })
-                }
-                else {
-                    stationStates.delete(station.name)
+                    selectedStations.splice(index, 1)
 
-                    // REMOVE FROM ORDERED LIST
-                    orderedWaypoints = orderedWaypoints.filter(w =>
-                        !(w.type === "station" && w.name === station.name)
-                    )
+
+                } else {
+
+                    selectedStations.push(station.name)
+
                 }
 
                 renderStations(stations)
+
                 drawScene()
             }
 
+            if (selectedStations.includes(station.name)) {
+                div.classList.add("active")
+            }
             div.appendChild(name)
             div.appendChild(delBtn)
 
@@ -589,31 +809,29 @@ function init(){
         const mapWidthPx = width * scale
         const mapHeightPx = height * scale
 
-        // center map on canvas
-        const offsetX = (canvas.width - mapWidthPx) / 2
-        const offsetY = (canvas.height - mapHeightPx) / 2
-
         // ---- DRAW MAP ----
         if (!mapCanvas) return
 
         ctx.save()
 
-        ctx.translate(offsetX, offsetY + mapHeightPx)
-        ctx.scale(scale, -scale)
+        ctx.translate(cameraX, cameraY)
+        ctx.scale(scale, scale)
+        // ROS map flip
+        ctx.translate(0, height)
+        ctx.scale(1, -1)
 
         ctx.imageSmoothingEnabled = false
         ctx.drawImage(mapCanvas, 0, 0)
 
-        ctx.restore()
-
         // ---- DRAW ROBOT ----
         if (robotReady && lastOdom){
 
-            const x = (lastOdom.x - origin.x) / res * scale
-            const y = (lastOdom.y - origin.y) / res * scale
+            const x = (lastOdom.x - origin.x) / res
+            const y = (lastOdom.y - origin.y) / res
 
             ctx.save()
-            ctx.translate(offsetX + x, offsetY + mapHeightPx - y)
+            ctx.translate(x, y)
+            ctx.scale(1, -1)
             ctx.rotate(lastOdom.theta || 0)
 
             ctx.drawImage(robotImg, -15, -15, 30, 30)
@@ -624,61 +842,93 @@ function init(){
         // ---- DRAW STATIONS ----
         [...rosStations, ...localStations].forEach(st => {
 
-            const x = (st.x - origin.x) / res * scale
-            const y = (st.y - origin.y) / res * scale
+            const x = (st.x - origin.x) / res
+            const y = (st.y - origin.y) / res
 
             ctx.save()
-            ctx.translate(offsetX + x, offsetY + mapHeightPx - y)
 
-            const state = stationStates.get(st.name)
+            ctx.translate(x, y)
 
-            if (state === "goal") ctx.fillStyle = "#10b981"       // green
-            else if (state === "waypoint") ctx.fillStyle = "#f59e0b" // yellow
-            else ctx.fillStyle = "#3b82f6"                        // blue (default)
+            // unflip local object
+            ctx.scale(1, -1)
+
+            const selected =
+                selectedStations.includes(st.name)
+
+            // station dot
+            ctx.fillStyle = "#3b82f6"
 
             ctx.beginPath()
             ctx.arc(0, 0, 6, 0, Math.PI * 2)
             ctx.fill()
 
+            // selected flag
+            if (selected) {
+
+                // pole
+                ctx.strokeStyle = "#10b981"
+                ctx.lineWidth = 2
+
+                ctx.beginPath()
+                ctx.moveTo(0, -6)
+                ctx.lineTo(0, -24)
+                ctx.stroke()
+
+                // flag
+                ctx.fillStyle = "#10b981"
+
+                ctx.beginPath()
+                ctx.moveTo(0, -24)
+                ctx.lineTo(14, -19)
+                ctx.lineTo(0, -14)
+                ctx.closePath()
+
+                ctx.fill()
+
+                // order number
+                const order =
+                    selectedStations.indexOf(st.name) + 1
+
+                ctx.fillStyle = "white"
+                ctx.font = "10px sans-serif"
+                ctx.fillText(order, 4, -17)
+            }
+
             // label
-            ctx.fillStyle = "#ffffff"
-            ctx.font = "10px sans-serif"
-            ctx.fillText(st.name, 8, 3)
+            ctx.fillStyle = "gray"
+            ctx.font = "12px sans-serif"
+            ctx.fillText(st.name, 8, -3)
 
             ctx.restore()
         })
+
         // ---- DRAW WAYPOINTS ----
         orderedWaypoints.forEach((wp, i) => {
 
             let x, y
 
             if (wp.type === "map") {
-                x = (wp.x - origin.x) / res * scale
-                y = (wp.y - origin.y) / res * scale
+                x = (wp.x - origin.x) / res
+                y = (wp.y - origin.y) / res
             }
 
-            if (wp.type === "station") {
-                const s = rosStations.find(st => st.name === wp.name)
-                if (!s) return
-
-                x = (s.x - origin.x) / res * scale
-                y = (s.y - origin.y) / res * scale
-            }
 
             ctx.save()
-            ctx.translate(offsetX + x, offsetY + mapHeightPx - y)
-
+            ctx.translate(x, y)
+            ctx.scale(1, -1)
             ctx.fillStyle = "#f59e0b"
             ctx.beginPath()
             ctx.arc(0, 0, 5, 0, Math.PI * 2)
             ctx.fill()
 
             // index number (correct order)
-            ctx.fillStyle = "#fff"
+            ctx.fillStyle = "#000"
             ctx.fillText(i + 1, 8, 3)
 
             ctx.restore()
         });
+
+        ctx.restore()
     }
 
     function resizeCanvas(){
@@ -714,10 +964,10 @@ function init(){
         let angular =  dx / baseRadius
 
         // Flip lower half (when joystick is below center)
-        if (dy > 0) {
+        /*if (dy > 0) {
             linear  = -linear
             angular = -angular
-        }
+        }*/
 
         // optional deadzone
         const deadzone = 0.05
@@ -777,6 +1027,7 @@ function init(){
             renderStations(rosStations)
             drawScene()
 
+
             console.log("Stations loaded:", rosStations)
 
         } catch (err) {
@@ -814,7 +1065,7 @@ function init(){
     function resetUI(){
 
         // clear selections
-        stationStates.clear()
+        selectedStations = [];
 
         // clear clicked waypoints
         orderedWaypoints = []
@@ -850,5 +1101,752 @@ function init(){
             toast.classList.remove("show")
             setTimeout(() => toast.remove(), 300)
         }, 3000)
+    }
+
+    const addStationBtn = document.getElementById("addStationBtn")
+
+    addStationBtn.onclick = () => {
+
+        addingStation = !addingStation
+
+        if (addingStation) {
+            showToast("Click map to place station", "info")
+            addStationBtn.style.background = "#10b981"
+        } else {
+            addStationBtn.style.background = ""
+        }
+    }
+
+    function openStationDialog(onSave){
+
+        const overlay = document.getElementById("stationDialog")
+        const input = document.getElementById("stationNameInput")
+
+        const saveBtn = document.getElementById("stationSaveBtn")
+        const cancelBtn = document.getElementById("stationCancelBtn")
+
+        overlay.classList.remove("hidden")
+        overlay.classList.add("show")
+
+        input.value = ""
+        input.focus()
+
+        function close(){
+
+            overlay.classList.remove("show")
+            overlay.classList.add("hidden")
+            // CLEANUP
+            saveBtn.onclick = null
+            cancelBtn.onclick = null
+            input.onkeydown = null
+        }
+
+        saveBtn.onclick = () => {
+
+            const name = input.value.trim()
+
+            if (!name) return
+
+            close()
+
+            onSave(name)
+        }
+
+        cancelBtn.onclick = () => {
+
+            close()
+        }
+
+        input.onkeydown = (e) => {
+
+            if (e.key === "Enter") {
+                saveBtn.click()
+            }
+
+            if (e.key === "Escape") {
+                close()
+            }
+        }
+    }
+
+
+    /* =========================================================
+       LIGHT TOGGLE
+    ========================================================= */
+
+    const controls = [
+
+        {
+            key: "FL",
+            button: document.getElementById("frontBtn"),
+            state: document.getElementById("frontState")
+        },
+
+        {
+            key: "RL",
+            button: document.getElementById("rearBtn"),
+            state: document.getElementById("rearState")
+        },
+
+        {
+            key: "FG",
+            button: document.getElementById("fogBtn"),
+            state: document.getElementById("fogState")
+        }
+
+    ]
+
+    controls.forEach(control => {
+
+        control.button.addEventListener("click", () => {
+
+            control.button.classList.toggle("active")
+
+            const active =
+                control.button.classList.contains("active")
+
+            const value =
+                active ? 1 : 0
+
+            control.state.innerText =
+                active ? "ON" : "OFF"
+
+            control.state.style.background =
+                active ? "#10b981" : "rgba(255,255,255,0.06)"
+
+            control.state.style.color =
+                active ? "white" : "#9ca3af"
+
+            const payload = {
+                FL: document
+                        .getElementById("frontBtn")
+                        .classList.contains("active") ? 1 : 0,
+
+                RL: document
+                        .getElementById("rearBtn")
+                        .classList.contains("active") ? 1 : 0,
+
+                FG: document
+                        .getElementById("fogBtn")
+                        .classList.contains("active") ? 1 : 0
+            }
+
+            // SEND
+            ws.send(JSON.stringify({
+                type: "light",
+                topic: "/api/light",
+                payload
+            }))
+
+            console.log(
+                "Light payload:",
+                payload
+            )
+
+        })
+
+    })
+    connectVideoBtn.onclick = async () => {
+
+        // DISCONNECT
+        if (videoConnected){
+
+            cameraFeed.src = "about:blank"
+
+            connectVideoBtn.innerHTML = "🔗"
+
+            connectVideoBtn.classList.remove("connected")
+
+            videoConnected = false
+            ipcInput.disabled = false
+            return
+        }
+
+        // CONNECT
+        const ip =
+            ipcInput.value.trim()
+
+        if (!ip) return
+
+        // VIDEO
+        cameraFeed.src =`http://${ip}:8889/webcam`
+
+        // MQTT BROKER
+        const connected = await connectBroker(ip)
+
+        connectVideoBtn.innerHTML = "⛔"
+        ipcInput.disabled = true
+        connectVideoBtn.classList.add("connected")
+
+        videoConnected = true
+    }
+
+    /* =========================================================
+       STATE
+    ========================================================= */
+
+    let selectedFavorite = null
+    let missionRunning = false
+    let runningFavorite = null
+
+    let favorites = []
+
+    /* =========================================================
+       TAB ELEMENTS
+    ========================================================= */
+
+    const favoritesTabBtn =
+        document.getElementById("favoritesTabBtn")
+
+    const stationsTabBtn =
+        document.getElementById("stationsTabBtn")
+
+    const favoritesView =
+        document.getElementById("favoritesView")
+
+    const stationsView =
+        document.getElementById("stationsView")
+
+    const drawerActionId = document.getElementById("drawerActionId");
+    /* =========================================================
+       TAB SWITCHING
+    ========================================================= */
+
+    favoritesTabBtn.addEventListener("click", () => {
+
+        favoritesTabBtn.classList.add("active")
+        stationsTabBtn.classList.remove("active")
+
+        favoritesView.classList.remove("hidden")
+        stationsView.classList.add("hidden")
+        drawerActionId.classList.add("hidden")
+    })
+
+    stationsTabBtn.addEventListener("click", () => {
+
+        stationsTabBtn.classList.add("active")
+        favoritesTabBtn.classList.remove("active")
+
+        stationsView.classList.remove("hidden")
+        favoritesView.classList.add("hidden")
+        drawerActionId.classList.remove("hidden")
+    })
+
+    /* =========================================================
+       LOAD FAVORITES
+    ========================================================= */
+
+    async function loadFavorites(){
+
+        const res =
+            await fetch("/api/favorites")
+
+        const data =
+            await res.json()
+
+        favorites = data.favorites || []
+
+        renderFavorites()
+    }
+
+    /* =========================================================
+       RENDER FAVORITES
+    ========================================================= */
+
+    function renderFavorites(){
+
+        const container =
+            document.getElementById("favoritesContainer")
+
+        container.innerHTML = ""
+
+        favorites.forEach(fav => {
+
+            const isSelected =
+                selectedFavorite === fav.name
+
+            const isRunning =
+                runningFavorite === fav.name
+
+            const card =
+                document.createElement("div")
+
+            card.className =
+                "favoriteCard"
+
+            if(isSelected)
+                card.classList.add("selected")
+
+            if(isRunning)
+                card.classList.add("running")
+
+            /* =================================================
+               HEADER
+            ================================================= */
+
+            const header =
+                document.createElement("div")
+
+            header.className =
+                "favoriteHeader"
+
+            header.innerHTML = `
+
+                <div>
+
+                    <div class="favoriteName">
+                        ${fav.name}
+                    </div>
+
+                    <div class="favoriteMeta">
+                        ${fav.stations.length} STATIONS
+                    </div>
+
+                </div>
+            `
+
+            header.onclick = () => {
+                if(selectedFavorite === fav.name){
+
+                    selectedFavorite = null
+
+                }else{
+
+                    selectedFavorite = fav.name
+                }
+
+                renderFavorites()
+            }
+
+            card.appendChild(header)
+
+            /* =================================================
+               CONTROLS
+            ================================================= */
+
+            if(isSelected){
+
+                const controls =
+                    document.createElement("div")
+
+                controls.className =
+                    "favoriteControls"
+
+                /* =============================================
+                   RUNNING
+                ============================================= */
+
+                if(isRunning){
+
+                    controls.innerHTML = `
+                        <button class="favAction stop">■</button>`
+
+                    controls.querySelector(".favAction.stop")
+                        .onclick = () =>
+                            stopFavorite(fav.name)
+
+                }
+
+                /* =============================================
+                   IDLE
+                ============================================= */
+
+                else{
+
+                    controls.innerHTML = `
+                        <button class="favAction start">▶</button>
+                        <button class="favAction delete">🗑</button>
+                    `
+
+                    controls.querySelector(".favAction.start")
+                        .onclick = () =>
+                            startFavorite(fav)
+
+                    controls.querySelector(".favAction.delete")
+                        .onclick = () =>
+                            deleteFavorite(fav.name)
+                }
+
+                card.appendChild(controls)
+            }
+
+            container.appendChild(card)
+        })
+    }
+
+    /* =========================================================
+       START FAVORITE
+    ========================================================= */
+
+    async function startFavorite(fav){
+
+        runningFavorite = fav.name
+
+        renderFavorites()
+
+        selectedStations = [...fav.stations]
+
+        orderedWaypoints = [...fav.waypoints]
+
+        drawScene()
+
+        const selectedGoalStations = selectedStations
+            .map(name => rosStations.find(s => s.name === name))
+            .filter(Boolean)
+
+        const mapWaypoints = orderedWaypoints
+            .map(w => ({
+                x: w.x,
+                y: w.y,
+                theta: w.theta || 0
+            }))
+
+        const payload = {
+
+            type: "job_goal",
+
+            tasks: [
+                {
+                    type: 1,
+
+                    task_station: {
+
+                        stations:
+                            selectedGoalStations.map(st => ({
+
+                                station_name: st.name,
+
+                                station_pose: {
+                                    x: st.x,
+                                    y: st.y,
+                                    theta: st.theta
+                                }
+                            })),
+
+                        waypoints: mapWaypoints
+                    }
+                }
+            ]
+        }
+
+        ws.send(JSON.stringify(payload))
+
+        console.log(
+            "Favorite mission started:",
+            payload
+        )
+    }
+    /* =========================================================
+       STOP FAVORITE
+    ========================================================= */
+
+    async function stopFavorite(favId){
+
+        ws.send(JSON.stringify({
+            type: "job_cancel"
+        }))
+
+        runningFavorite = null
+
+        resetUI()
+
+        renderFavorites()
+
+        console.log(
+            "Favorite stopped:",
+            favId
+        )
+    }
+
+    /* =========================================================
+       DELETE FAVORITE
+    ========================================================= */
+    let favoritesData = []
+    async function deleteFavorite(favName){
+
+        try{
+
+            const res = await fetch(
+
+                `/favorites/delete?name=${encodeURIComponent(favName)}`,
+
+                {
+                    method: "DELETE"
+                }
+            )
+
+            const data = await res.json()
+
+            console.log(data)
+
+            /* -------------------------------------
+               REMOVE FROM LOCAL STATE
+            ------------------------------------- */
+
+            favorites = favorites.filter(
+                    f => f.name !== favName
+                )
+
+            /* -------------------------------------
+               CLEAR SELECTION
+            ------------------------------------- */
+
+            if(selectedFavorite === favName){
+
+                selectedFavorite = null
+            }
+
+            /* -------------------------------------
+               RE-RENDER
+            ------------------------------------- */
+
+            renderFavorites()
+
+            showToast(
+                "Favorite deleted",
+                "success"
+            )
+
+        }catch(err){
+
+            console.error(err)
+
+            showToast(
+                "Delete failed",
+                "error"
+            )
+        }
+    }
+
+    /* =========================================================
+       INIT
+    ========================================================= */
+
+    loadFavorites()
+
+    const favoritesFilter = document.getElementById("favoritesFilter")
+
+    if(favoritesFilter){
+
+        favoritesFilter.addEventListener("input", () => {
+
+            const term = favoritesFilter.value.toLowerCase()
+
+            document.querySelectorAll(".favoriteCard")
+            .forEach(card => {
+
+                const name =
+                    card.innerText.toLowerCase()
+
+                card.style.display =
+                    name.includes(term)
+                    ? ""
+                    : "none"
+            })
+        })
+    }
+
+    /* =========================================================
+       SAVE FAVORITE
+    ========================================================= */
+
+    const saveFavoriteBtn =
+        document.getElementById("saveFavoriteBtn");
+
+    saveFavoriteBtn.onclick = () => {
+        showToast("Save Favorites", "info")
+        saveFavoriteBtn.style.background = "#10b981"
+        if (selectedStations.length === 0){
+            showToast(
+                "No stations or waypoints selected",
+                "warn"
+            )
+
+            return
+        }
+
+        openFavDialog(async (name) => {
+
+            try {
+                const payload = {
+
+                    name: name.trim(),
+
+                    stations: [...selectedStations],
+
+                    waypoints: orderedWaypoints.map(w => ({
+                        x: w.x,
+                        y: w.y,
+                        theta: w.theta || 0
+                    }))
+                }
+                const res = await fetch(
+
+                    "/favorites/add",
+
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+
+                        body: JSON.stringify(payload)
+                    }
+                )
+
+                const data = await res.json()
+
+                console.log(data)
+
+                showToast(
+                    "Favorite saved",
+                    "success"
+                )
+                loadFavorites();
+            } catch (err) {
+
+                 console.error(err)
+
+                showToast(
+                    "Failed to save favorite",
+                    "error"
+                )
+            }
+        })
+
+    }
+
+    function openFavDialog(onSave){
+        const favOverlay = document.getElementById("favDialog")
+        const favInput = document.getElementById("favNameInput")
+
+        const favSaveBtn = document.getElementById("favSaveBtn")
+        const favCancelBtn = document.getElementById("favCancelBtn")
+
+        favOverlay.classList.remove("hidden")
+        favOverlay.classList.add("show")
+
+        favInput.value = ""
+        favInput.focus()
+
+        function close(){
+            favOverlay.classList.add("hidden")
+            favOverlay.classList.remove("show")
+
+            // CLEANUP
+            favSaveBtn.onclick = null
+            favCancelBtn.onclick = null
+            favInput.onkeydown = null
+            saveFavoriteBtn.style.background = ""
+        }
+
+        favSaveBtn.onclick = () => {
+
+            const name = favInput.value.trim()
+
+            if (!name) return
+
+            close()
+
+            onSave(name)
+            saveFavoriteBtn.style.background = ""
+        }
+
+        favCancelBtn.onclick = () => {
+
+            close()
+        }
+
+        favInput.onkeydown = (e) => {
+
+            if (e.key === "Enter") {
+                favSaveBtn.click()
+            }
+
+            if (e.key === "Escape") {
+                close()
+            }
+        }
+    }
+    ipcInput.value = localStorage.getItem("brokerIP") || ""
+
+    const savedBrokerIP =
+        localStorage.getItem("brokerIP")
+
+    if (savedBrokerIP){
+
+        cameraFeed.src =
+        `http://${savedBrokerIP}:8889/webcam`
+
+        videoConnected = true
+
+        connectVideoBtn.innerHTML = "⛔"
+
+        connectVideoBtn.classList.add("connected")
+
+        ipcInput.disabled = true
+    }
+
+    async function connectBroker(ip){
+
+        if (!ip) return false
+
+        try{
+
+            const brokerRes = await fetch("/api/set-broker", {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({ ip })
+            })
+
+            const brokerData = await brokerRes.json()
+
+            console.log("Broker:", brokerData)
+
+            if (!brokerData.ok){
+
+                showToast(
+                    "Broker connection failed",
+                    "error"
+                )
+
+                return false
+            }
+
+            localStorage.setItem("brokerIP", ip)
+
+            ws.send(JSON.stringify({
+                type: "map_request",
+                request: "get_map"
+            }))
+
+            ws.send(JSON.stringify({
+                type: "station_list_request"
+            }))
+
+            showToast(
+                "Broker connected",
+                "success"
+            )
+
+            return true
+
+        }catch(err){
+
+            console.error(err)
+
+            showToast(
+                "Broker connection failed",
+                "error"
+            )
+
+            return false
+        }
     }
 }
