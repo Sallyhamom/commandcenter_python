@@ -10,15 +10,6 @@ function init(){
     let isMoving = false
     let orderedWaypoints = []
     let addingStation, addingFavorite = false
-    setInterval(() => {
-
-        if (dragging) {
-            sendCommand(lastLinear, lastAngular)
-        } /*else {
-            sendCommand(0, 0)
-        }*/
-
-    }, 10)
 
     let videoConnected = false
     let localStations = []      // created on map
@@ -1040,6 +1031,7 @@ function init(){
     let lastSent = 0
 
     function sendCommand(linear, angular){
+        if (!driveEnabled) return;
 
         if(ws.readyState !== WebSocket.OPEN) return
 
@@ -1849,4 +1841,40 @@ function init(){
             return false
         }
     }
+
+    let driveEnabled = false;
+
+    setInterval(() => {
+
+        if (!driveEnabled) {
+            sendCommand(0, 0);
+            return;
+        }
+
+        if (dragging) {
+            sendCommand(lastLinear, lastAngular);
+        } else {
+            sendCommand(0, 0);
+        }
+
+    }, 100); // 10Hz
+    const driveSwitch =
+        document.getElementById("driveEnableSwitch");
+
+    driveSwitch.addEventListener("change", () => {
+
+        driveEnabled = driveSwitch.checked;
+
+        if (!driveEnabled) {
+
+            sendCommand(0, 0);
+
+            showToast("Drive Disabled","warning");
+
+        } else {
+
+            showToast("Drive Enabled","success");
+        }
+
+    });
 }
