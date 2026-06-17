@@ -121,7 +121,6 @@ def save_stations(stations):
 
 
 def save_favorites(data):
-    print(FAVORITES_FILE)
     with open(FAVORITES_FILE, "w") as f:
         json.dump(data, f, indent=2)
 

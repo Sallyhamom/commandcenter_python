@@ -33,7 +33,6 @@ class MQTTWebSocketBridge:
             "payload": payload
         }
 
-        print(payload)
         # Push to all WS clients (thread-safe)
         if self.loop:
             asyncio.run_coroutine_threadsafe(

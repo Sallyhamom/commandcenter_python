@@ -220,7 +220,7 @@ function init(){
 
             if (status === "IN_PROGRESS") {
                 jobActive = true
-                document.getElementById("startMission").disabled = true
+               // document.getElementById("startMission").disabled = true
                 showToast("Job started", "info")
             }
 
@@ -418,10 +418,10 @@ function init(){
 
     startBtn.onclick = () => {
 
-        if (jobActive) {
+        /*if (jobActive) {
             console.warn("Job already running")
             return
-        }
+        }*/
 
         const selectedGoalStations = selectedStations
             .map(name => rosStations.find(s => s.name === name))
@@ -466,8 +466,8 @@ function init(){
             ]
         }
         // lock UI
-        jobActive = true
-        startBtn.disabled = true
+        //jobActive = true
+        //startBtn.disabled = true
 
         ws.send(JSON.stringify(payload))
 
@@ -1061,11 +1061,11 @@ function init(){
 
         // clear clicked waypoints
         orderedWaypoints = []
-
+        renderStations();
 
         // unlock start button
         jobActive = false
-        document.getElementById("startMission").disabled = false
+        //document.getElementById("startMission").disabled = false
 
         // optional: reset status text
         const status = document.getElementById("jobStatus")
